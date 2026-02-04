@@ -1,65 +1,90 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, forwardRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 
-interface ProvinceData {
+interface TooltipProps {
+  x: number
+  y: number
   province: string
   cases: number
-  coordinates: { x: number; y: number }
+  visible: boolean
 }
 
-// Coordinates for Argentine provinces (simplified)
-const provinceCoordinates: Record<string, { x: number; y: number }> = {
-  "Buenos Aires": { x: 58, y: 65 },
-  CABA: { x: 58, y: 62 },
-  "Santa Fe": { x: 52, y: 55 },
-  Córdoba: { x: 48, y: 55 },
-  Mendoza: { x: 38, y: 68 },
-  Tucumán: { x: 45, y: 42 },
-  "Entre Ríos": { x: 52, y: 58 },
-  Salta: { x: 42, y: 35 },
-  Misiones: { x: 62, y: 45 },
-  Chaco: { x: 52, y: 42 },
-  Corrientes: { x: 56, y: 48 },
-  "Santiago del Estero": { x: 48, y: 48 },
-  Jujuy: { x: 42, y: 30 },
-  "San Luis": { x: 42, y: 62 },
-  Catamarca: { x: 42, y: 45 },
-  "La Rioja": { x: 40, y: 52 },
-  Formosa: { x: 52, y: 38 },
-  Neuquén: { x: 38, y: 72 },
-  "Río Negro": { x: 42, y: 78 },
-  Chubut: { x: 42, y: 85 },
-  "Santa Cruz": { x: 40, y: 92 },
-  "Tierra del Fuego": { x: 38, y: 98 },
-  "La Pampa": { x: 48, y: 68 },
-  "San Juan": { x: 38, y: 58 },
+const CustomTooltip = ({ x, y, province, cases, visible }: TooltipProps) => {
+  if (!visible) return null
+
+  return (
+    <div
+      className="fixed pointer-events-none z-50 bg-white rounded-lg shadow-xl border border-slate-200 p-3 min-w-[150px]"
+      style={{ left: `${x}px`, top: `${y}px` }}
+    >
+      <p className="text-sm font-semibold text-slate-900 mb-1">{province}</p>
+      <p className="text-sm text-slate-600">
+        Casos: <span className="font-bold text-blue-600">{cases}</span>
+      </p>
+    </div>
+  )
 }
 
-const getPointSize = (cases: number) => {
-  if (cases > 200) return "w-4 h-4"
-  if (cases > 100) return "w-3 h-3"
-  if (cases > 50) return "w-2 h-2"
-  return "w-1.5 h-1.5"
-}
+const ARGENTINA_GEOJSON_URL = "https://gist.githubusercontent.com/aguspina/570fe8c52bb9628f38618ad9b037f4e7/raw/argentina.geojson"
 
-const getPointColor = (cases: number) => {
-  /* Updated map point colors to match new brand palette */
-  if (cases > 200) return "bg-red-600"
-  if (cases > 100) return "bg-orange-500"
-  if (cases > 50) return "bg-blue-500"
-  return "bg-blue-300"
+const normalizeProvinceName = (name: string): string => {
+  const nameMap: Record<string, string> = {
+    "Ciudad de Buenos Aires": "CABA",
+    "Buenos Aires": "Buenos Aires",
+    "Córdoba": "Córdoba",
+    "Santa Fe": "Santa Fe",
+    "Mendoza": "Mendoza",
+    "Tucumán": "Tucumán",
+    "Entre Ríos": "Entre Ríos",
+    "Salta": "Salta",
+    "Misiones": "Misiones",
+    "Chaco": "Chaco",
+    "Chubut": "Chubut",
+    "San Juan": "San Juan",
+    "San Luis": "San Luis",
+    "La Rioja": "La Rioja",
+    "La Pampa": "La Pampa",
+    "Santiago del Estero": "Santiago del Estero",
+    "Catamarca": "Catamarca",
+    "Jujuy": "Jujuy",
+    "Río Negro": "Río Negro",
+    "Neuquén": "Neuquén",
+    "Formosa": "Formosa",
+    "Corrientes": "Corrientes",
+    "Santa Cruz": "Santa Cruz",
+    "Tierra del Fuego": "Tierra del Fuego, Antártida e Islas del Atlántico Sur",
+  }
+  return nameMap[name] || name
 }
 
 export function ArgentinaMap() {
-  const [caseLocations, setCaseLocations] = useState<ProvinceData[]>([])
+  const [provinceData, setProvinceData] = useState<Record<string, number>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [tooltip, setTooltip] = useState<TooltipProps>({
+    x: 0,
+    y: 0,
+    province: "",
+    cases: 0,
+    visible: false,
+  })
+  const mapContainerRef = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<MapLibreGL.Map | null>
   const supabase = createClient()
+
+  useEffect(() => {
+    const handleTooltipUpdate = (e: Event) => {
+      const tooltipEvent = e as CustomEvent<TooltipProps>
+      setTooltip(tooltipEvent.detail)
+    }
+
+    window.addEventListener("tooltipUpdate", handleTooltipUpdate)
+    return () => window.removeEventListener("tooltipUpdate", handleTooltipUpdate)
+  }, [])
 
   useEffect(() => {
     fetchCasesByProvince()
@@ -74,7 +99,6 @@ export function ArgentinaMap() {
 
       if (fetchError) throw fetchError
 
-      // Count cases by province
       const provinceCounts: Record<string, number> = {}
       data.forEach((incident: any) => {
         if (incident.provincia) {
@@ -82,16 +106,7 @@ export function ArgentinaMap() {
         }
       })
 
-      // Transform to component format
-      const locations: ProvinceData[] = Object.entries(provinceCounts)
-        .map(([province, cases]) => ({
-          province,
-          cases,
-          coordinates: provinceCoordinates[province] || { x: 50, y: 50 },
-        }))
-        .sort((a, b) => b.cases - a.cases)
-
-      setCaseLocations(locations)
+      setProvinceData(provinceCounts)
     } catch (err) {
       console.error("Error fetching case locations:", err)
       setError("Error al cargar la distribución de casos")
@@ -100,153 +115,247 @@ export function ArgentinaMap() {
     }
   }
 
+  useEffect(() => {
+    if (isLoading || !mapContainerRef.current) return
+
+    const map = new MapLibreGL.Map({
+      container: mapContainerRef.current,
+      style: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+      center: [-63.6167, -38.4161] as [number, number],
+      zoom: 3.5,
+      minZoom: 3,
+      maxZoom: 10,
+      attributionControl: { compact: true },
+    })
+
+    mapRef.current = map
+
+    const fetchAndAddGeoJSON = async () => {
+      try {
+        const response = await fetch(ARGENTINA_GEOJSON_URL)
+        const geojsonData = await response.json()
+        
+        map.addSource("provincias", {
+          type: "geojson",
+          data: geojsonData,
+        })
+
+        map.addLayer({
+          id: "provincias-fill",
+          type: "fill",
+          source: "provincias",
+          paint: {
+            "fill-color": "#f1f5f9",
+            "fill-opacity": 0.8,
+            "fill-outline-color": "#94a3b8",
+          }
+        })
+      } catch (error) {
+        console.error("Error loading GeoJSON:", error)
+      }
+    }
+
+    map.on("load", () => {
+      fetchAndAddGeoJSON()
+    })
+
+    map.on("mousemove", "provincias-fill", (e: any) => {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ["provincias-fill"],
+        })
+
+      if (features && features.length > 0) {
+        const feature = features[0]
+        const provinceName = normalizeProvinceName(feature.properties?.NAME_1 || "Desconocido")
+        const cases = provinceData[provinceName] || 0
+
+        let fillColor = "#f1f5f9"
+
+        if (cases > 0) {
+          const values = Object.values(provinceData)
+            const maxValue = Math.max(...values, 1)
+            if (cases > maxValue * 0.75) fillColor = "#1e40af"
+          else if (cases > maxValue * 0.5) fillColor = "#2563eb"
+          else fillColor = "#3b82f6"
+          else fillColor = "#93c5fd"
+          }
+
+        setTooltip({
+              x: e.point.x + window.scrollX,
+              y: e.point.y + window.scrollY,
+              province: provinceName,
+              cases,
+              visible: true,
+              })
+        }
+      }
+    })
+
+    map.on("mouseleave", "provincias-fill", () => {
+      setTooltip({ ...tooltip, visible: false })
+    })
+    }
+
+    const handleMove = () => {
+      window.removeEventListener("mousemove", handleMove)
+    }
+
+    const mapRef.current?.remove()
+  }
+
+    return () => {
+      mapRef.current?.remove()
+    }
+  }, [isLoading, mapContainerRef.current, provinceData])
+}
+
   if (isLoading) {
     return (
-      <Card className="border-slate-200">
+      <Card className="border-slate-200 shadow-sm">
         <CardHeader>
           <CardTitle className="font-heading">Mapa de Casos por Provincia</CardTitle>
           <CardDescription>Distribución geográfica de los casos registrados</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-            <span className="ml-2 text-slate-600">Cargando mapa...</span>
-          </div>
-        </CardContent>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+              <span className="ml-2 text-slate-600">Cargando mapa...</span>
+            </div>
+          </CardContent>
       </Card>
     )
   }
 
   if (error) {
     return (
-      <Card className="border-slate-200">
+      <Card className="border-slate-200 shadow-sm">
         <CardHeader>
           <CardTitle className="font-heading">Mapa de Casos por Provincia</CardTitle>
           <CardDescription>Error al cargar los datos</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-12">
-            <p className="text-slate-600 mb-4">{error}</p>
-            <button
-              onClick={fetchCasesByProvince}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              Reintentar
-            </button>
-          </div>
-        </CardContent>
+          </CardHeader>
+          <CardContent>
+            <div className="text-center py-12">
+              <p className="text-slate-600 mb-4">{error}</p>
+              <button
+                onClick={fetchCasesByProvince}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Reintentar
+              </button>
+            </div>
+          </CardContent>
       </Card>
     )
   }
 
-  const totalCases = caseLocations.reduce((sum, loc) => sum + loc.cases, 0)
+  const totalCases = Object.values(provinceData).reduce((sum, val) => sum + val, 0)
+  const sortedProvinces = Object.entries(provinceData)
+    .filter(([, count]) => count > 0)
+    .sort(([, a], [, b]) => b - a)
+
+  const values = Object.values(provinceData)
+  const maxValue = Math.max(...values, 1)
 
   return (
-    <Card className="border-slate-200">
-      <CardHeader>
-        <CardTitle className="font-heading">Mapa de Casos por Provincia</CardTitle>
-        <CardDescription>Distribución geográfica de los casos registrados</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Map Visualization */}
-          <div className="lg:col-span-2">
-            <div className="relative bg-slate-100 rounded-lg p-8 h-96 overflow-hidden">
-              {/* Simplified Argentina outline */}
-              <svg
-                viewBox="0 0 100 100"
-                className="w-full h-full"
-                style={{ filter: "drop-shadow(0 1px 2px rgb(0 0 0 / 0.1))" }}
-              >
-                {/* Argentina silhouette - simplified path */}
-                <path
-                  d="M45 15 L55 15 L60 20 L65 25 L68 35 L65 45 L62 55 L58 65 L55 75 L50 85 L45 90 L40 85 L35 75 L32 65 L30 55 L28 45 L30 35 L35 25 L40 20 L45 15 Z"
-                  fill="white"
-                  stroke="#e2e8f0"
-                  strokeWidth="0.5"
-                />
-
-                {/* Case location points */}
-                {caseLocations.map((location) => (
-                  <g key={location.province}>
-                    <circle
-                      cx={location.coordinates.x}
-                      cy={location.coordinates.y}
-                      r={location.cases > 200 ? "2" : location.cases > 100 ? "1.5" : location.cases > 50 ? "1" : "0.8"}
-                      className={`${getPointColor(location.cases)} opacity-80`}
-                      fill="currentColor"
-                    />
-                    <circle
-                      cx={location.coordinates.x}
-                      cy={location.coordinates.y}
-                      r={location.cases > 200 ? "3" : location.cases > 100 ? "2.5" : location.cases > 50 ? "2" : "1.5"}
-                      className={`${getPointColor(location.cases)} opacity-30`}
-                      fill="currentColor"
-                    />
-                  </g>
-                ))}
-              </svg>
-            </div>
-          </div>
-
-          {/* Legend and Statistics */}
-          <div className="space-y-6">
-            <div>
-              <h4 className="font-medium text-slate-900 mb-3 font-heading">Leyenda</h4>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm">
-                  <div className="w-4 h-4 bg-red-600 rounded-full"></div>
-                  <span className="text-slate-600">Más de 200 casos</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
-                  <span className="text-slate-600">100-200 casos</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  <span className="text-slate-600">50-100 casos</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <div className="w-1.5 h-1.5 bg-blue-300 rounded-full"></div>
-                  <span className="text-slate-600">Menos de 50 casos</span>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <h4 className="font-medium text-slate-900 mb-3 font-heading">Top Provincias</h4>
-              <div className="space-y-2">
-                {caseLocations.slice(0, 5).map((location) => (
-                  <div key={location.province} className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600">{location.province}</span>
-                    <Badge variant="outline" className="text-xs">
-                      {location.cases}
-                    </Badge>
+      <>
+        <CustomTooltip
+          x={tooltip.x}
+          y={tooltip.y}
+          province={tooltip.province}
+          cases={tooltip.cases}
+          visible={tooltip.visible}
+          />
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader>
+            <CardTitle className="font-heading">Mapa de Casos por Provincia</CardTitle>
+            <CardDescription>Distribución geográfica de los casos registrados</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2">
+                  <div className="bg-gradient-to-br from-blue-50 to-slate-100 rounded-lg p-6">
+                        <div className="h-[600px] w-full rounded-lg overflow-hidden" ref={mapContainerRef}></div>
                   </div>
-                ))}
-              </div>
             </div>
 
-            <div className="bg-slate-50 rounded-lg p-4">
-              <h5 className="font-medium text-slate-900 mb-2 text-sm">Resumen Geográfico</h5>
-              <div className="space-y-1 text-xs text-slate-600">
-                <div className="flex justify-between">
-                  <span>Total provincias:</span>
-                  <span className="font-medium">24</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Con casos registrados:</span>
-                  <span className="font-medium">{caseLocations.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Total casos:</span>
-                  <span className="font-medium">{totalCases}</span>
-                </div>
-              </div>
-            </div>
+            <div className="space-y-6">
+                  <h4 className="font-medium text-slate-900 mb-3 font-heading">Leyenda</h4>
+                  <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm">
+                              <div className="w-4 h-4 rounded bg-[#1e40af]"></div>
+                                <span className="text-slate-600">Alta densidad ({Math.round(maxValue * 0.75)}+ casos)</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm">
+                                <div className="w-4 h-4 rounded bg-[#2563eb]"></div>
+                                <span className="text-slate-600">
+                                  Media-alta ({Math.round(maxValue * 0.5)}-{Math.round(maxValue * 0.75)} casos)
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm">
+                                <div className="w-4 h-4 rounded bg-[#3b82f6]"></div>
+                                <span className="text-slate-600">
+                                  Media ({Math.round(maxValue * 0.25)}-{Math.round(maxValue * 0.5)} casos)
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm">
+                                <div className="w-4 h-4 rounded bg-[#93c5fd]"></div>
+                                <span className="text-slate-600">
+                                  Baja (1-{Math.round(maxValue * 0.25)} casos)
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm">
+                                <div className="w-4 h-4 rounded bg-[#f1f5f9] border border-slate-300"></div>
+                                <span className="text-slate-600">Sin casos</span>
+                                </div>
+                              </div>
+                              </div>
+                          </div>
+
+                          <div className="space-y-6">
+                              <h4 className="font-medium text-slate-900 mb-3 font-heading">Top Provincias</h4>
+                              <div className="space-y-2">
+                                  {sortedProvinces.slice(0, 5).map(([province, count]) => (
+                                    <div key={province} className="flex items-center justify-between text-sm">
+                                      <span className="text-slate-600">{province}</span>
+                                      <span className="font-bold text-blue-600">{count}</span>
+                                    </div>
+                                  </div>
+                                  {sortedProvinces.length === 0 && (
+                                    <p className="text-sm text-slate-500">No hay casos registrados</p>
+                                    )}
+                                  )}
+                              </div>
+                          </div>
+
+                          <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                <h5 className="font-medium text-slate-900 mb-2 text-sm">Resumen Geográfico</h5>
+                                <div className="space-y-1 text-xs text-slate-600">
+                                  <div className="space-y-1 text-xs text-slate-600">
+                                    <div className="flex justify-between">
+                                      <span>Total provincias:</span>
+                                      <span className="font-medium">24</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span>Con casos registrados:</span>
+                                        <span className="font-medium">{sortedProvinces.length}</span>
+                                      </div>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span>Total casos:</span>
+                                        <span className="font-medium">{totalCases}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                          </div>
+                        </div>
+                  </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </>
   )
+  }
 }

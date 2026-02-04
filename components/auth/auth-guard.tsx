@@ -7,7 +7,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { Loader2 } from "lucide-react"
 
-const DEV_BYPASS_AUTH = false
+
 
 interface AuthGuardProps {
   children: React.ReactNode
@@ -20,13 +20,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const hasRedirectedRef = useRef(false)
   const supabase = createClient()
 
-  useEffect(() => {
-    if (DEV_BYPASS_AUTH) {
-      console.log("[v0] Modo DEV activo - Bypass de autenticación habilitado")
-      setIsAuthenticated(true)
-      return
-    }
-
+useEffect(() => {
     let isMounted = true
 
     const checkAuth = async () => {

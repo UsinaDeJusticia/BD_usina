@@ -21,6 +21,90 @@ interface CaseFormProps {
   caseId?: string
 }
 
+interface VictimData {
+  id: string | null
+  casoId: string | null
+  nombreCompleto: string
+  fechaNacimiento: string
+  edad: string
+  profesion: string
+  redesSociales: string
+  nacionalidad: string
+  notasAdicionales: string
+  provinciaResidencia: string
+  municipioResidencia: string
+  fechaHecho: string
+  fechaFallecimiento: string
+  fotoPerfil: string | null
+  fotoPath: string | null
+  resources: any[]
+}
+
+interface AccusedData {
+  id: string | null
+  apellidoNombre: string
+  alias: string
+  edad: string
+  menorEdad: boolean
+  nacionalidad: string
+  juzgadoUfi: string
+  estadoProcesal: string
+  pena: string
+  juicioAbreviado: boolean
+  prisionPerpetua: boolean
+  fechaVeredicto: string
+  documentoIdentidad: string
+  tribunalFallo: string
+  esExtranjero: boolean
+  detenidoPrevio: boolean
+  fallecido: boolean
+  esReincidente: boolean
+  cargos: string
+  trialDates: string[]
+  instanciasJudiciales: any[]
+  resources: any[]
+}
+
+interface ResourceData {
+  id: string
+  isNew: boolean
+  tipo: string
+  tipo_otro: string
+  titulo: string
+  url: string
+  fuente: string
+  fecha: string
+  descripcion: string
+  archivo_path: string | null
+  archivo_nombre: string | null
+  archivo_tipo: string | null
+  archivo_size: number | null
+  input_mode: string
+  hecho_id: string
+  imputado_id: string
+  created_at: string
+  updated_at: string
+}
+
+interface FormData {
+  victims: VictimData[]
+  incident: {
+    provincia: string
+    municipio: string
+    localidadBarrio: string
+    tipoLugar: string
+    lugarOtro: string
+    resumenHecho: string
+    tipoCrimen: string
+    tipoArma: string
+    estadoCaso: string
+  }
+  accused: AccusedData[]
+  followUp: any
+  resources: ResourceData[]
+  victimResources: ResourceData[]
+}
+
 const getEmptyVictimData = () => ({
   id: null as string | null,
   casoId: null as string | null,
@@ -35,6 +119,8 @@ const getEmptyVictimData = () => ({
   municipioResidencia: "",
   fechaHecho: "",
   fechaFallecimiento: "",
+  fotoPerfil: null as string | null,
+  fotoPath: null as string | null,
   resources: [],
 })
 
@@ -46,7 +132,7 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
   const [isLoading, setIsLoading] = useState(mode === "edit")
   const [resourcesToDelete, setResourcesToDelete] = useState<string[]>([])
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     victims: [getEmptyVictimData()],
     incident: {
       provincia: "",
@@ -159,11 +245,11 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
 
               const caso = allCasosForHecho.find((c) => c.victima_id === v.id)
 
-              // Fetch victim resources
+              // Fetch victim resources (general resources from hecho)
               const { data: victimResources } = await supabase
                 .from("recursos")
                 .select("*")
-                .eq("victima_id", v.id)
+                .eq("hecho_id", hechoId)
                 .is("imputado_id", null)
 
               return {
@@ -180,6 +266,8 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
                 municipioResidencia: v.municipio_residencia || "",
                 fechaHecho: v.fecha_hecho || "",
                 fechaFallecimiento: v.fecha_fallecimiento || "",
+                fotoPerfil: v.foto_perfil || null,
+                fotoPath: null,
                 resources: (victimResources || []).map((r: any) => ({
                   id: r.id,
                   tipo: r.tipo || "",
@@ -213,11 +301,11 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
           throw new Error("Error al cargar datos de la víctima")
         }
 
-        // Fetch victim resources
+        // Fetch victim resources (general resources from hecho)
         const { data: victimResources } = await supabase
           .from("recursos")
           .select("*")
-          .eq("victima_id", victimaId)
+          .eq("hecho_id", hechoId)
           .is("imputado_id", null)
 
         allVictims = [
@@ -235,6 +323,8 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
             municipioResidencia: victimData.municipio_residencia || "",
             fechaHecho: victimData.fecha_hecho || "",
             fechaFallecimiento: victimData.fecha_fallecimiento || "",
+            fotoPerfil: victimData.foto_perfil || null,
+            fotoPath: null,
             resources: (victimResources || []).map((r: any) => ({
               id: r.id,
               tipo: r.tipo || "",
@@ -267,7 +357,11 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
       }
 
       // Load seguimiento
-      const { data: seguimientoData } = await supabase.from("seguimiento").select("*").eq("hecho_id", hechoId).single()
+      let seguimientoData: any = null
+      if (hechoId) {
+        const result = await supabase.from("seguimiento").select("*").eq("hecho_id", hechoId).maybeSingle()
+        seguimientoData = result.data
+      }
 
       if (seguimientoData) {
         setFormData((prev) => ({
@@ -292,7 +386,6 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
             parentescoOtro: seguimientoData.parentesco_otro || "",
             tieneAbogadoQuerellante: seguimientoData.tiene_abogado_querellante || "ns_nc",
             abogadoUsinaAmicus: seguimientoData.abogado_usina_amicus || "",
-            abogadoAmicusFirmante: seguimientoData.abogado_amicus_firmante || "",
             listaMiembrosAsignados: seguimientoData.lista_miembros_asignados || [],
             listaContactosFamiliares: seguimientoData.lista_contactos_familiares || [],
             datosAbogadosQuerellantes: seguimientoData.datos_abogados_querellantes || [],
@@ -368,13 +461,14 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
 
       // Fetch recursos generales del hecho
       let recursosGenerales: any[] = []
-      if (hechoId) {
+      if (!hechoId) {
+        recursosGenerales = []
+      } else {
         const { data } = await supabase
           .from("recursos")
           .select("*")
           .eq("hecho_id", hechoId)
           .is("imputado_id", null)
-          .is("victima_id", null)
         recursosGenerales = data || []
       }
 
@@ -399,7 +493,7 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
           resumenHecho: hechoData?.resumen_hecho || "",
           tipoCrimen: hechoData?.tipo_crimen || "",
           tipoArma: hechoData?.tipo_arma || "",
-          estadoCaso: casoData?.estado || "En investigación",
+          estadoCaso: casoData?.estado_general || "En investigación",
         },
         accused: imputadosWithResources,
         followUp: {
@@ -422,7 +516,6 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
           parentescoOtro: seguimientoData?.parentesco_otro || "",
           tieneAbogadoQuerellante: seguimientoData?.tiene_abogado_querellante || "ns_nc",
           abogadoUsinaAmicus: seguimientoData?.abogado_usina_amicus || "",
-          abogadoAmicusFirmante: seguimientoData?.abogado_amicus_firmante || "",
           listaMiembrosAsignados: listaMiembros,
           listaContactosFamiliares: listaContactos,
           datosAbogadosQuerellantes: listaAbogados,
@@ -431,16 +524,23 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
         },
         resources: recursosGenerales.map((r: any) => ({
           id: r.id,
+          isNew: false,
           tipo: r.tipo || "",
+          tipo_otro: "",
           titulo: r.titulo || "",
           url: r.url || "",
           fuente: r.fuente || "",
+          fecha: r.created_at || "",
           descripcion: r.descripcion || "",
           archivo_path: r.archivo_path,
           archivo_nombre: r.archivo_nombre,
           archivo_tipo: r.archivo_tipo,
           archivo_size: r.archivo_size,
           input_mode: r.archivo_path ? "file" : "url",
+          hecho_id: r.hecho_id || "",
+          imputado_id: r.imputado_id || "",
+          created_at: r.created_at || "",
+          updated_at: r.updated_at || "",
         })),
         victimResources: [],
       })
@@ -523,7 +623,7 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
             const pathsToDelete = resourcesToRemove.map((r) => r.archivo_path).filter((p): p is string => !!p)
 
             if (pathsToDelete.length > 0) {
-              await supabase.storage.from("case-files").remove(pathsToDelete)
+              await supabase.storage.from("archivos-casos").remove(pathsToDelete)
             }
           }
 
@@ -550,6 +650,7 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
                 municipio_residencia: victim.municipioResidencia || null,
                 fecha_hecho: victim.fechaHecho || null,
                 fecha_fallecimiento: victim.fechaFallecimiento || null,
+                foto_perfil: victim.fotoPerfil || null,
               })
               .eq("id", victim.id)
 
@@ -572,7 +673,6 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
               for (const resource of newVictimResources) {
                 if (resource.url || resource.archivo_path) {
                   const resourceData = {
-                    victima_id: victim.id,
                     hecho_id: hechoId,
                     tipo: resource.tipo && resource.tipo !== "" ? resource.tipo : "other",
                     titulo: resource.titulo || resource.archivo_nombre || "Sin título",
@@ -605,6 +705,7 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
                   municipio_residencia: victim.municipioResidencia || null,
                   fecha_hecho: victim.fechaHecho || null,
                   fecha_fallecimiento: victim.fechaFallecimiento || null,
+                  foto_perfil: victim.fotoPerfil || null,
                 },
               ])
               .select()
@@ -617,8 +718,7 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
               {
                 victima_id: newVictimData.id,
                 hecho_id: hechoId,
-                estado: formData.incident.estadoCaso || "En investigación",
-                estado_general: "En investigación",
+                estado_general: formData.incident.estadoCaso || "En investigación",
               },
             ])
             if (casoInsertError) throw casoInsertError
@@ -629,7 +729,6 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
                 if (resource.titulo || resource.url || resource.archivo_path) {
                   await supabase.from("recursos").insert([
                     {
-                      victima_id: newVictimData.id,
                       hecho_id: hechoId,
                       tipo: resource.tipo || null,
                       titulo: resource.titulo || resource.archivo_nombre || "Sin título",
@@ -668,7 +767,7 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
           const { error: estadoError } = await supabase
             .from("casos")
             .update({
-              estado: formData.incident.estadoCaso || "En investigación",
+              estado_general: formData.incident.estadoCaso || "En investigación",
             })
             .eq("hecho_id", hechoId)
 
@@ -729,6 +828,7 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
                 .eq("id", accused.id)
 
               if (updateError) throw updateError
+              if (!accused.id) continue
               accusedId = accused.id
 
               // Save instances_judiciales for each accused
@@ -939,7 +1039,6 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
             parentesco_otro: formData.followUp.parentescoOtro || null,
             tiene_abogado_querellante: formData.followUp.tieneAbogadoQuerellante || "ns_nc",
             abogado_usina_amicus: formData.followUp.abogadoUsinaAmicus || null,
-            abogado_amicus_firmante: formData.followUp.abogadoAmicusFirmante || null,
             lista_miembros_asignados: formData.followUp.listaMiembrosAsignados || null,
             lista_contactos_familiares: formData.followUp.listaContactosFamiliares || null,
             datos_abogados_querellantes: formData.followUp.datosAbogadosQuerellantes || null,
@@ -976,7 +1075,6 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
               const resourceData = {
                 hecho_id: hechoId,
                 imputado_id: null,
-                victima_id: null,
                 tipo: resource.tipo && resource.tipo !== "" ? resource.tipo : "other",
                 titulo: resource.titulo || resource.archivo_nombre || "Sin título",
                 url: resource.url || null,
@@ -1041,6 +1139,7 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
                 municipio_residencia: victim.municipioResidencia || null,
                 fecha_hecho: victim.fechaHecho || null,
                 fecha_fallecimiento: victim.fechaFallecimiento || null,
+                foto_perfil: victim.fotoPerfil || null,
               },
             ])
             .select()
@@ -1053,8 +1152,7 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
             {
               victima_id: victimData.id,
               hecho_id: hechoId,
-              estado: formData.incident.estadoCaso || "En investigación",
-              estado_general: "En investigación",
+              estado_general: formData.incident.estadoCaso || "En investigación",
             },
           ])
           if (casoInsertError) throw casoInsertError
@@ -1070,7 +1168,6 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
               if (resource.titulo || resource.url || resource.archivo_path) {
                 await supabase.from("recursos").insert([
                   {
-                    victima_id: victimData.id,
                     hecho_id: hechoId,
                     tipo: resource.tipo || null,
                     titulo: resource.titulo || resource.archivo_nombre || "Sin título",
@@ -1186,7 +1283,6 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
               parentesco_otro: formData.followUp.parentescoOtro || null,
               tiene_abogado_querellante: formData.followUp.tieneAbogadoQuerellante || "ns_nc",
               abogado_usina_amicus: formData.followUp.abogadoUsinaAmicus || null,
-              abogado_amicus_firmante: formData.followUp.abogadoAmicusFirmante || null,
               lista_miembros_asignados: formData.followUp.listaMiembrosAsignados || null,
               lista_contactos_familiares: formData.followUp.listaContactosFamiliares || null,
               datos_abogados_querellantes: formData.followUp.datosAbogadosQuerellantes || null,

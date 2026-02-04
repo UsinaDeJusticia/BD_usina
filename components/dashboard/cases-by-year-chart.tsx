@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis } from "recharts"
+import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts"
 import { createClient } from "@/lib/supabase/client"
 import { useEffect, useState } from "react"
 
@@ -14,8 +14,28 @@ interface YearlyData {
 const chartConfig = {
   cases: {
     label: "Casos",
-    color: "hsl(var(--chart-1))",
+    color: "#2563eb",
   },
+}
+
+interface ChartTooltipProps {
+  active?: boolean
+  payload?: any[]
+  label?: string
+}
+
+const CustomTooltip = ({ active, payload, label }: ChartTooltipProps) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white rounded-lg shadow-lg border border-slate-200 p-3">
+        <p className="text-sm font-medium text-slate-900 mb-1">{label}</p>
+        <p className="text-sm text-slate-600">
+          Casos: <span className="font-semibold text-slate-900">{payload[0].value}</span>
+        </p>
+      </div>
+    )
+  }
+  return null
 }
 
 export function CasesByYearChart() {
@@ -60,7 +80,7 @@ export function CasesByYearChart() {
 
   if (loading) {
     return (
-      <Card className="border-slate-200">
+      <Card className="border-slate-200 shadow-sm">
         <CardHeader>
           <CardTitle className="font-heading">Casos por Año</CardTitle>
           <CardDescription>Evolución del número de casos registrados</CardDescription>
@@ -76,7 +96,7 @@ export function CasesByYearChart() {
 
   if (data.length === 0) {
     return (
-      <Card className="border-slate-200">
+      <Card className="border-slate-200 shadow-sm">
         <CardHeader>
           <CardTitle className="font-heading">Casos por Año</CardTitle>
           <CardDescription>Evolución del número de casos registrados</CardDescription>
@@ -91,7 +111,7 @@ export function CasesByYearChart() {
   }
 
   return (
-    <Card className="border-slate-200">
+    <Card className="border-slate-200 shadow-sm">
       <CardHeader>
         <CardTitle className="font-heading">Casos por Año</CardTitle>
         <CardDescription>Evolución del número de casos registrados</CardDescription>
@@ -100,16 +120,24 @@ export function CasesByYearChart() {
         <ChartContainer config={chartConfig}>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={data}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
               <XAxis
                 dataKey="year"
                 tickLine={false}
                 tickMargin={10}
                 axisLine={false}
                 tickFormatter={(value) => value}
+                tick={{ fill: "#64748b", fontSize: 12 }}
               />
-              <YAxis tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(value) => `${value}`} />
-              <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-              <Bar dataKey="cases" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} />
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                tickFormatter={(value) => `${value}`}
+                tick={{ fill: "#64748b", fontSize: 12 }}
+              />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: "#f1f5f9" }} />
+              <Bar dataKey="cases" fill="#2563eb" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartContainer>

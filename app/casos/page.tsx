@@ -139,7 +139,6 @@ export default function CasosPage() {
         .select(`
           id,
           estado_general,
-          estado,
           hecho_id,
           victima_id,
           victimas (
@@ -206,11 +205,9 @@ export default function CasosPage() {
             location: hecho.municipio || "No especificado",
             province: hecho.provincia || "No especificado",
             status:
-              caso.estado && caso.estado.trim() !== ""
-                ? caso.estado
-                : caso.estado_general && caso.estado_general.trim() !== ""
-                  ? caso.estado_general
-                  : "En investigación",
+              caso.estado_general && caso.estado_general.trim() !== ""
+                ? caso.estado_general
+                : "En investigación",
             familyContactName,
             familyRelationship,
             familyContactPhone,

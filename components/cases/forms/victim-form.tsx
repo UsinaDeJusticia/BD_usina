@@ -6,7 +6,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useCountries } from "@/hooks/use-countries"
 import { useArgentinaGeo } from "@/hooks/use-argentina-geo"
-import { Loader2 } from "lucide-react"
+import { Loader2, Upload, User, X } from "lucide-react"
+import { useState } from "react"
+import { createClient } from "@/lib/supabase/client"
 
 interface VictimFormProps {
   data: any
@@ -19,10 +21,52 @@ export function VictimForm({ data, onChange, showDates = false }: VictimFormProp
   const { provincias, municipios, isLoadingProvincias, isLoadingMunicipios, fetchMunicipios } = useArgentinaGeo(
     data.provinciaResidencia,
   )
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const supabase = createClient()
 
   const savedMunicipioInList = municipios.some(
     (m) => m.nombre === data.municipioResidencia || m.nombre.toLowerCase() === data.municipioResidencia?.toLowerCase(),
   )
+
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = event.target.files?.[0]
+      if (!file) return
+
+      setUploadingPhoto(true)
+
+      const fileExt = file.name.split(".").pop()
+      const fileName = `${Math.random().toString(36).substring(7)}.${fileExt}`
+      const filePath = `victim-photos/${fileName}`
+
+      const { error: uploadError } = await supabase.storage.from("archivos-casos").upload(filePath, file)
+
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage.from("archivos-casos").getPublicUrl(filePath)
+
+      onChange({
+        ...data,
+        fotoPerfil: publicUrl,
+        fotoPath: filePath,
+      })
+    } catch (err) {
+      console.error("Error uploading photo:", err)
+    } finally {
+      setUploadingPhoto(false)
+    }
+  }
+
+  const handlePhotoRemove = async () => {
+    if (data.fotoPath) {
+      await supabase.storage.from("archivos-casos").remove([data.fotoPath])
+    }
+    onChange({
+      ...data,
+      fotoPerfil: null,
+      fotoPath: null,
+    })
+  }
 
   const handleChange = (field: string, value: string) => {
     onChange({
@@ -79,6 +123,57 @@ export function VictimForm({ data, onChange, showDates = false }: VictimFormProp
 
       <div>
         <h3 className="text-lg font-semibold text-slate-900 font-heading mb-4">Datos Personales de la Víctima</h3>
+
+        <div className="space-y-4 mb-6">
+          <Label className="text-sm font-medium text-slate-700">Foto de Perfil</Label>
+          <div className="flex items-start gap-4">
+            {data.fotoPerfil ? (
+              <div className="relative">
+                <img
+                  src={data.fotoPerfil}
+                  alt="Foto de perfil"
+                  className="w-24 h-24 rounded-lg object-cover border-2 border-slate-200"
+                />
+                <button
+                  type="button"
+                  onClick={handlePhotoRemove}
+                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <div className="w-24 h-24 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center bg-slate-50">
+                <User className="w-8 h-8 text-slate-400" />
+              </div>
+            )}
+            <div className="flex-1">
+              <label className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors cursor-pointer w-fit">
+                {uploadingPhoto ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Subiendo...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4" />
+                    {data.fotoPerfil ? "Cambiar Foto" : "Subir Foto"}
+                  </>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  disabled={uploadingPhoto}
+                  className="hidden"
+                />
+              </label>
+              <p className="text-xs text-slate-500 mt-2">
+                Formatos: JPG, PNG, WEBP. Máx. 5MB
+              </p>
+            </div>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">

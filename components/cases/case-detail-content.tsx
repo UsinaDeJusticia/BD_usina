@@ -166,7 +166,6 @@ interface CaseData {
   recursos: Recurso[]
   hermanos_hecho: HermanoHecho[]
   estado_general: string | null
-  estado: string | null
 }
 
 const getStatusColor = (status: string) => {
@@ -349,7 +348,7 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
       // Strategy 1: Find by caso.id (new structure)
       const { data: casosArray } = await supabase
         .from("casos")
-        .select("id, victima_id, hecho_id, estado_general, estado")
+        .select("id, victima_id, hecho_id, estado_general")
         .eq("id", caseId)
 
       if (casosArray && casosArray.length > 0) {
@@ -388,23 +387,21 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
 
     let casoId = victimaData.id
     let estadoGeneral = "En investigación"
-    let estado = null
 
     if (hechoData) {
       const { data: casosArray } = await supabase
         .from("casos")
-        .select("id, estado_general, estado")
+        .select("id, estado_general")
         .eq("hecho_id", hechoData.id)
         .limit(1)
 
       if (casosArray && casosArray.length > 0) {
         casoId = casosArray[0].id
         estadoGeneral = casosArray[0].estado_general || estadoGeneral
-        estado = casosArray[0].estado
       }
     }
 
-    await loadFullCaseData(casoId, victimaData, hechoData, estadoGeneral, estado)
+    await loadFullCaseData(casoId, victimaData, hechoData, estadoGeneral)
   }
 
   const loadLegacyCaseFromHecho = async (hechoData: any) => {
@@ -412,21 +409,19 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
 
     let casoId = victimaData?.id || hechoData.id
     let estadoGeneral = "En investigación"
-    let estado = null
 
     const { data: casosArray } = await supabase
       .from("casos")
-      .select("id, estado_general, estado")
+      .select("id, estado_general")
       .eq("hecho_id", hechoData.id)
       .limit(1)
 
     if (casosArray && casosArray.length > 0) {
       casoId = casosArray[0].id
       estadoGeneral = casosArray[0].estado_general || estadoGeneral
-      estado = casosArray[0].estado
     }
 
-    await loadFullCaseData(casoId, victimaData, hechoData, estadoGeneral, estado)
+    await loadFullCaseData(casoId, victimaData, hechoData, estadoGeneral)
   }
 
   const loadCaseWithData = async (casoData: any) => {
@@ -444,7 +439,7 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
       hechoData = hechosArray?.[0] || null
     }
 
-    await loadFullCaseData(casoData.id, victimaData, hechoData, casoData.estado_general, casoData.estado)
+    await loadFullCaseData(casoData.id, victimaData, hechoData, casoData.estado_general)
   }
 
   const loadFullCaseData = async (
@@ -452,7 +447,6 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
     victimaData: any,
     hechoData: any,
     estadoGeneral: string | null,
-    estado: string | null = null,
   ) => {
     // Get imputados
     let imputadosData: Imputado[] = []
@@ -487,12 +481,6 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
     if (hechoData?.id) {
       const { data: hechoRecursos } = await supabase.from("recursos").select("*").eq("hecho_id", hechoData.id)
       recursosData = [...recursosData, ...(hechoRecursos || [])]
-    }
-
-    // Get victim-specific recursos
-    if (victimaData?.id) {
-      const { data: victimRecursos } = await supabase.from("recursos").select("*").eq("victima_id", victimaData.id)
-      recursosData = [...recursosData, ...(victimRecursos || [])]
     }
 
     // Get imputado-specific recursos
@@ -530,7 +518,6 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
       recursos: uniqueRecursos,
       hermanos_hecho: hermanosHecho,
       estado_general: estadoGeneral,
-      estado: estado,
     })
   }
 
@@ -579,11 +566,11 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
     )
   }
 
-  const { victima, hecho, imputados, seguimiento, recursos, hermanos_hecho, estado_general, estado } = caseData
+  const { victima, hecho, imputados, seguimiento, recursos, hermanos_hecho, estado_general } = caseData
 
-  const getVictimResources = () => recursos.filter((r) => r.victima_id === victima.id && !r.imputado_id)
+  const getVictimResources = () => recursos.filter((r) => !r.imputado_id)
   const getImputadoResources = (imputadoId: string) => recursos.filter((r) => r.imputado_id === imputadoId)
-  const getGeneralResources = () => recursos.filter((r) => !r.victima_id && !r.imputado_id)
+  const getGeneralResources = () => recursos.filter((r) => !r.imputado_id)
 
   return (
     <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -599,9 +586,9 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">{victima.nombre_completo || "Víctima sin nombre"}</h1>
             <div className="flex items-center gap-2 mt-1">
-              {(estado || estado_general) && (
-                <Badge className={`text-xs ${getStatusColor(estado || estado_general || "")}`}>
-                  {estado || estado_general}
+              {estado_general && (
+                <Badge className={`text-xs ${getStatusColor(estado_general || "")}`}>
+                  {estado_general}
                 </Badge>
               )}
               {hecho?.tipo_crimen && (
@@ -1014,16 +1001,20 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {seguimiento.tipo_acompanamiento && seguimiento.tipo_acompanamiento.length > 0 && (
+              {seguimiento.tipo_acompanamiento && (
                 <div>
                   <label className="text-sm font-medium text-slate-500">Tipo de Acompañamiento</label>
-                  <div className="flex flex-wrap gap-2 mt-1">
-                    {seguimiento.tipo_acompanamiento.map((tipo, i) => (
-                      <Badge key={i} variant="secondary">
-                        {tipo}
-                      </Badge>
-                    ))}
-                  </div>
+                  {Array.isArray(seguimiento.tipo_acompanamiento) ? (
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {seguimiento.tipo_acompanamiento.map((tipo, i) => (
+                        <Badge key={i} variant="secondary">
+                          {tipo}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-slate-900 mt-1">{seguimiento.tipo_acompanamiento}</p>
+                  )}
                 </div>
               )}
 
