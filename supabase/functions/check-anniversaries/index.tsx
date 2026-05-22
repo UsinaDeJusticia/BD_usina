@@ -88,7 +88,7 @@ serve(async (req) => {
     // 4. Enviar (Configuración Correcta)
     const { data, error: emailError } = await resend.emails.send({
       from: "Usina de Justicia <no-reply@alertas.usinadejusticia.org.ar>",
-      to: ["info@usinadejusticia.org"],
+      to: ["info@usinadejusticia.org.ar"],
       subject: `Recordatorios del día: ${anniversaries.length} personas`,
       html: htmlContent,
     })
