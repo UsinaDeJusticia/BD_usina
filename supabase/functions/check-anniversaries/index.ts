@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
 
     // 4. Send email via Resend
     const { data: emailData, error: emailError } = await resend.emails.send({
-      from: "Usina de Justicia <no-reply@alertas.usinadejusticia.org.ar>",
+      from: "Usina de Justicia <no-reply@usinadejusticia.org.ar>",
       to: ["info@usinadejusticia.org.ar"],
       subject: `🕯️ Recordatorios del día - ${today.toLocaleDateString("es-AR")}`,
       html: htmlContent,
