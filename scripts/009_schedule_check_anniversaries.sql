@@ -1,0 +1,100 @@
+-- =============================================================================
+-- Cron job: alerta-aniversarios -> Edge Function `check-anniversaries`
+-- =============================================================================
+-- Este script DOCUMENTA cómo está configurado el cron en este proyecto Supabase.
+-- NO ejecutar de nuevo "tal cual" en producción: el job ya existe y volver a
+-- correr `cron.schedule` con el mismo jobname lo recrea, mientras que correrlo
+-- con otro nombre crearía un duplicado (dos emails diarios).
+--
+-- Para REPLICAR la config en otro proyecto: ejecutar todo este archivo de
+-- arriba a abajo en SQL Editor, tras setear el secret en Vault (paso 0).
+--
+-- Para CAMBIAR el horario o el comando en este proyecto: usar `cron.alter_job`
+-- (sección al final), no `cron.schedule`.
+-- -----------------------------------------------------------------------------
+
+-- Paso 0 — Prerequisito: el secret con la anon key en Vault.
+-- -----------------------------------------------------------------------------
+-- La función `check-anniversaries` corre con `verify_jwt: true`, así que el
+-- POST del cron necesita un Bearer JWT válido. Usamos la anon key (es pública
+-- por diseño — se expone en el frontend — pero igual la guardamos en Vault
+-- para no commitearla al repo en plaintext).
+--
+-- Crear el secret (una sola vez):
+--
+--   select vault.create_secret(
+--     '<ANON_KEY>',
+--     'cron_anon_key',
+--     'Anon key usada por pg_cron para invocar Edge Functions'
+--   );
+--
+-- Actualizar el secret (si se rota la anon key):
+--
+--   select vault.update_secret(
+--     (select id from vault.secrets where name = 'cron_anon_key'),
+--     '<NUEVA_ANON_KEY>'
+--   );
+
+-- Paso 1 — Extensiones necesarias.
+-- -----------------------------------------------------------------------------
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+-- vault viene habilitado por defecto en proyectos Supabase.
+
+-- Paso 2 — Job (solo si el proyecto está virgen; si ya existe, ir a "alter").
+-- -----------------------------------------------------------------------------
+-- Schedule: '0 15 * * *' = 15:00 UTC = 12:00 AR (UTC-3, sin DST).
+-- La función mira las fechas de MAÑANA (preaviso 24h), no las de hoy.
+
+-- select cron.schedule(
+--   'alerta-aniversarios',
+--   '0 15 * * *',
+--   $$
+--   select net.http_post(
+--     url     := 'https://cvxlbhykhvefufikspsm.supabase.co/functions/v1/check-anniversaries',
+--     headers := jsonb_build_object(
+--       'Content-Type',  'application/json',
+--       'Authorization', 'Bearer ' || (
+--         select decrypted_secret from vault.decrypted_secrets where name = 'cron_anon_key'
+--       )
+--     ),
+--     body := '{}'::jsonb
+--   );
+--   $$
+-- );
+
+-- Paso 3 — Actualizar un job ya existente (caso real de este proyecto).
+-- -----------------------------------------------------------------------------
+-- Encontrar el jobid:
+--   select jobid, jobname, schedule, active from cron.job;
+--
+-- Reemplazar schedule + command sin recrearlo:
+--
+--   select cron.alter_job(
+--     job_id  := <JOBID>,
+--     schedule := '0 15 * * *',
+--     command  := $$
+--   select net.http_post(
+--     url     := 'https://cvxlbhykhvefufikspsm.supabase.co/functions/v1/check-anniversaries',
+--     headers := jsonb_build_object(
+--       'Content-Type',  'application/json',
+--       'Authorization', 'Bearer ' || (
+--         select decrypted_secret from vault.decrypted_secrets where name = 'cron_anon_key'
+--       )
+--     ),
+--     body := '{}'::jsonb
+--   );
+--     $$
+--   );
+
+-- Paso 4 — Verificar ejecuciones recientes.
+-- -----------------------------------------------------------------------------
+--   select jobid, status, return_message, start_time
+--   from cron.job_run_details
+--   where jobid = <JOBID>
+--   order by start_time desc
+--   limit 10;
+--
+-- Status esperado: 'succeeded'. Si dice 'failed', el campo return_message
+-- aclara el motivo (típicamente: secret no encontrado, función caída,
+-- problema de auth).
