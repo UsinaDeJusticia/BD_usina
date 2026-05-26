@@ -12,7 +12,8 @@
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "react": "^19.0.2",
-    "react-dom": "^19.0.2"
+    "react-dom": "^19.0.2",
+    "postcss": "^8.5.10"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -78,7 +79,7 @@
     "@types/node": "^22",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
-    "postcss": "^8.5",
+    "postcss": "^8.5.10",
     "tailwindcss": "^4.1.9",
     "typescript": "^5"
   }
