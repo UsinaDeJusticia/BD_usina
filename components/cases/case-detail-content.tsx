@@ -548,9 +548,11 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
     }
   }
 
+  // El bucket es privado: usar la API route que valida sesion + whitelist
+  // y redirecciona a un signed URL temporal. Ver lib/supabase/storage.ts.
   const getFileUrl = (path: string) => {
-    const { data } = supabase.storage.from("archivos-casos").getPublicUrl(path)
-    return data.publicUrl
+    const encoded = path.split("/").map(encodeURIComponent).join("/")
+    return `/api/files/${encoded}`
   }
 
   if (isLoading) {

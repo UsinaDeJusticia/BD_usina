@@ -41,13 +41,13 @@ export async function uploadFile(supabase: SupabaseClient, file: File, folder = 
 
   console.log("[v0] uploadFile - Upload successful:", data)
 
-  // Get public URL
-  const { data: urlData } = supabase.storage.from(BUCKET_NAME).getPublicUrl(data.path)
-
+  // El bucket es privado. Devolvemos la URL del proxy autenticado en /api/files
+  // (ver app/api/files/[...path]/route.ts). Esa ruta valida sesion + whitelist
+  // y redirecciona a un signed URL efímero.
   return {
     success: true,
     path: data.path,
-    url: urlData.publicUrl,
+    url: buildApiFileUrl(data.path),
   }
 }
 
@@ -62,14 +62,31 @@ export async function deleteFile(supabase: SupabaseClient, filePath: string): Pr
   return true
 }
 
-export function getFileUrl(supabase: SupabaseClient, filePath: string): string {
-  const { data } = supabase.storage.from(BUCKET_NAME).getPublicUrl(filePath)
-  return data.publicUrl
+/**
+ * URL para abrir/descargar un archivo del bucket privado.
+ *
+ * Apunta a la API route `/api/files/[...path]` que valida sesion + whitelist
+ * antes de redirigir a un signed URL de 60s. NO devuelve la URL pública del
+ * bucket (que ya no es pública).
+ *
+ * El parametro `supabase` queda por compatibilidad con call sites existentes;
+ * no se usa porque la generacion del URL es estática.
+ */
+export function getFileUrl(_supabase: SupabaseClient, filePath: string): string {
+  return buildApiFileUrl(filePath)
 }
 
+/**
+ * Versión sin cliente Supabase (para usar en Server Components o en handlers
+ * donde no hay cliente disponible). Mismo destino que getFileUrl.
+ */
 export function getPublicFileUrl(filePath: string): string {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  return `${supabaseUrl}/storage/v1/object/public/${BUCKET_NAME}/${filePath}`
+  return buildApiFileUrl(filePath)
+}
+
+function buildApiFileUrl(filePath: string): string {
+  const encoded = filePath.split("/").map(encodeURIComponent).join("/")
+  return `/api/files/${encoded}`
 }
 
 export function getFileTypeIcon(mimeType: string): string {
