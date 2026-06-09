@@ -5,11 +5,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis } from "recharts"
 import { createClient } from "@/lib/supabase/client"
 import { useEffect, useState } from "react"
-
-interface YearlyData {
-  year: string
-  cases: number
-}
+import { fetchDashboardStats, type YearlyData } from "@/lib/data/dashboard"
 
 const chartConfig = {
   cases: {
@@ -25,29 +21,8 @@ export function CasesByYearChart() {
   useEffect(() => {
     const fetchYearlyData = async () => {
       try {
-        const supabase = createClient()
-
-        const { data: hechos, error } = await supabase.from("hechos").select("fecha_hecho")
-
-        if (error) {
-          console.error("Error fetching yearly data:", error)
-          return
-        }
-
-        const yearCounts: { [key: string]: number } = {}
-
-        hechos?.forEach((hecho) => {
-          if (hecho.fecha_hecho) {
-            const year = new Date(hecho.fecha_hecho).getFullYear().toString()
-            yearCounts[year] = (yearCounts[year] || 0) + 1
-          }
-        })
-
-        const chartData = Object.entries(yearCounts)
-          .map(([year, cases]) => ({ year, cases }))
-          .sort((a, b) => Number.parseInt(a.year) - Number.parseInt(b.year))
-
-        setData(chartData)
+        const stats = await fetchDashboardStats(createClient())
+        setData(stats.casesByYear)
       } catch (error) {
         console.error("Error fetching yearly data:", error)
       } finally {

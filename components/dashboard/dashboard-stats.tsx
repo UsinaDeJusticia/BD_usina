@@ -4,16 +4,10 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { AlertTriangle, FileText, Calendar, Scale, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
-
-interface StatsData {
-  totalCases: number
-  casesLastYear: number
-  casesWithoutConviction: number
-  casesInInvestigation: number
-}
+import { fetchDashboardStats, type DashboardKPIs } from "@/lib/data/dashboard"
 
 export function DashboardStats() {
-  const [stats, setStats] = useState<StatsData | null>(null)
+  const [stats, setStats] = useState<DashboardKPIs | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const supabase = createClient()
@@ -26,46 +20,8 @@ export function DashboardStats() {
     try {
       setIsLoading(true)
       setError(null)
-
-      const { data: victimas, error: victimasError } = await supabase.from("victimas").select(`
-          id,
-          created_at,
-          hechos (
-            id,
-            fecha_hecho
-          )
-        `)
-
-      if (victimasError) throw victimasError
-
-      const { data: imputados, error: imputadosError } = await supabase.from("imputados").select(`
-          id,
-          estado_procesal,
-          hechos!inner (
-            victima_id
-          )
-        `)
-
-      if (imputadosError) throw imputadosError
-
-      const totalCases = victimas?.length || 0
-
-      const oneYearAgo = new Date()
-      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
-      const casesLastYear = victimas?.filter((victim) => new Date(victim.created_at) >= oneYearAgo).length || 0
-
-      const casesWithoutConviction =
-        imputados?.filter((imputado) => imputado.estado_procesal !== "Condenado").length || 0
-
-      const casesInInvestigation =
-        imputados?.filter((imputado) => imputado.estado_procesal === "En investigación").length || 0
-
-      setStats({
-        totalCases,
-        casesLastYear,
-        casesWithoutConviction,
-        casesInInvestigation,
-      })
+      const data = await fetchDashboardStats(supabase)
+      setStats(data.kpis)
     } catch (err) {
       console.error("Error fetching stats:", err)
       setError("Error al cargar estadísticas")

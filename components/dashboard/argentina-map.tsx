@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { fetchDashboardStats } from "@/lib/data/dashboard"
 
 interface ProvinceData {
   province: string
@@ -69,29 +70,15 @@ export function ArgentinaMap() {
     try {
       setIsLoading(true)
       setError(null)
-
-      const { data, error: fetchError } = await supabase.from("hechos").select("provincia")
-
-      if (fetchError) throw fetchError
-
-      // Count cases by province
-      const provinceCounts: Record<string, number> = {}
-      data.forEach((incident: any) => {
-        if (incident.provincia) {
-          provinceCounts[incident.provincia] = (provinceCounts[incident.provincia] || 0) + 1
-        }
-      })
-
-      // Transform to component format
-      const locations: ProvinceData[] = Object.entries(provinceCounts)
-        .map(([province, cases]) => ({
-          province,
-          cases,
-          coordinates: provinceCoordinates[province] || { x: 50, y: 50 },
-        }))
-        .sort((a, b) => b.cases - a.cases)
-
-      setCaseLocations(locations)
+      const stats = await fetchDashboardStats(supabase)
+      // La RPC ya devuelve los agregados ordenados; sólo agregamos coords.
+      setCaseLocations(
+        stats.casesByProvince.map((p) => ({
+          province: p.provincia,
+          cases: p.cases,
+          coordinates: provinceCoordinates[p.provincia] || { x: 50, y: 50 },
+        })),
+      )
     } catch (err) {
       console.error("Error fetching case locations:", err)
       setError("Error al cargar la distribución de casos")

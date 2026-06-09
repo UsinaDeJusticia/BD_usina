@@ -5,6 +5,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts"
 import { createClient } from "@/lib/supabase/client"
 import { useEffect, useState } from "react"
+import { fetchDashboardStats } from "@/lib/data/dashboard"
 
 interface StatusData {
   status: string
@@ -63,29 +64,14 @@ export function StatusDistributionChart() {
   useEffect(() => {
     const fetchStatusData = async () => {
       try {
-        const supabase = createClient()
-
-        const { data: imputados, error } = await supabase.from("imputados").select("estado_procesal")
-
-        if (error) {
-          console.error("Error fetching status data:", error)
-          return
-        }
-
-        const statusCounts: { [key: string]: number } = {}
-
-        imputados?.forEach((imputado) => {
-          const status = imputado.estado_procesal || "Otros"
-          statusCounts[status] = (statusCounts[status] || 0) + 1
-        })
-
-        const chartData = Object.entries(statusCounts).map(([status, cases]) => ({
-          status,
-          cases,
-          fill: statusColors[status] || statusColors["Otros"],
-        }))
-
-        setData(chartData)
+        const stats = await fetchDashboardStats(createClient())
+        setData(
+          stats.casesByStatus.map((s) => ({
+            status: s.status,
+            cases: s.cases,
+            fill: statusColors[s.status] || statusColors["Otros"],
+          })),
+        )
       } catch (error) {
         console.error("Error fetching status data:", error)
       } finally {
