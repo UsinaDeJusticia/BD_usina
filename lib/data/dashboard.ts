@@ -1,12 +1,11 @@
 // Data layer para el dashboard estadístico.
 //
-// Antes: cada tarjeta/gráfico hacía su propio fetch y traía la tabla
-// entera para contar en JS. Ahora: una sola RPC (`get_dashboard_stats`)
-// devuelve todos los agregados en ~1 KB.
+// Una sola RPC (`get_dashboard_stats`) devuelve todos los agregados que
+// consume el dashboard en ~1 KB, en lugar de las 5 queries que bajaban
+// tablas enteras y contaban en JS.
 //
-// Para deduplicar los 4 mounts simultáneos del dashboard se incluye un
-// in-flight share + TTL corto. Cache real (invalidación al editar casos,
-// staleTime configurable, etc.) llega en Fase 3 con React Query.
+// El cacheo, dedupe y manejo de stale-while-revalidate los hace React
+// Query a través de `useDashboardStats` (ver `lib/queries/dashboard.ts`).
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
@@ -39,29 +38,10 @@ export interface DashboardStats {
   casesByStatus: StatusData[]
 }
 
-const TTL_MS = 30_000
-
-let inFlight: Promise<DashboardStats> | null = null
-let cached: { ts: number; data: DashboardStats } | null = null
-
 export async function fetchDashboardStats(
   supabase: SupabaseClient,
 ): Promise<DashboardStats> {
-  const now = Date.now()
-  if (cached && now - cached.ts < TTL_MS) return cached.data
-  if (inFlight) return inFlight
-
-  inFlight = (async () => {
-    try {
-      const { data, error } = await supabase.rpc("get_dashboard_stats")
-      if (error) throw error
-      const stats = data as DashboardStats
-      cached = { ts: Date.now(), data: stats }
-      return stats
-    } finally {
-      inFlight = null
-    }
-  })()
-
-  return inFlight
+  const { data, error } = await supabase.rpc("get_dashboard_stats")
+  if (error) throw error
+  return data as DashboardStats
 }

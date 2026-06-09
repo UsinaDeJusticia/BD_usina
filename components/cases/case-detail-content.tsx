@@ -47,6 +47,8 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { FilePreviewDialog } from "@/components/ui/file-preview-dialog"
 import { formatDateUTC } from "@/lib/utils"
+import { useQueryClient } from "@tanstack/react-query"
+import { queryKeys } from "@/lib/queries/keys"
 
 interface CaseDetailContentProps {
   caseId: string
@@ -336,6 +338,7 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     fetchCaseData()
@@ -541,6 +544,9 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
       setIsDeleting(true)
       const { error } = await supabase.from("casos").delete().eq("id", caseId)
       if (error) throw error
+      // Listados y dashboard quedaron stale tras el delete.
+      queryClient.invalidateQueries({ queryKey: queryKeys.casesList })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats })
       router.push("/casos")
     } catch (err) {
       console.error("Error deleting case:", err)

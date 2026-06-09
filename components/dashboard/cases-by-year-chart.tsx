@@ -3,9 +3,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis } from "recharts"
-import { createClient } from "@/lib/supabase/client"
-import { useEffect, useState } from "react"
-import { fetchDashboardStats, type YearlyData } from "@/lib/data/dashboard"
+import { useDashboardStats } from "@/lib/queries/dashboard"
 
 const chartConfig = {
   cases: {
@@ -15,23 +13,8 @@ const chartConfig = {
 }
 
 export function CasesByYearChart() {
-  const [data, setData] = useState<YearlyData[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const fetchYearlyData = async () => {
-      try {
-        const stats = await fetchDashboardStats(createClient())
-        setData(stats.casesByYear)
-      } catch (error) {
-        console.error("Error fetching yearly data:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchYearlyData()
-  }, [])
+  const { data: stats, isLoading: loading } = useDashboardStats()
+  const data = stats?.casesByYear ?? []
 
   if (loading) {
     return (

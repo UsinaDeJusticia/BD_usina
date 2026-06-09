@@ -3,9 +3,8 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts"
-import { createClient } from "@/lib/supabase/client"
-import { useEffect, useState } from "react"
-import { fetchDashboardStats } from "@/lib/data/dashboard"
+import { useMemo } from "react"
+import { useDashboardStats } from "@/lib/queries/dashboard"
 
 interface StatusData {
   status: string
@@ -58,29 +57,16 @@ const statusColors: { [key: string]: string } = {
 }
 
 export function StatusDistributionChart() {
-  const [data, setData] = useState<StatusData[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const fetchStatusData = async () => {
-      try {
-        const stats = await fetchDashboardStats(createClient())
-        setData(
-          stats.casesByStatus.map((s) => ({
-            status: s.status,
-            cases: s.cases,
-            fill: statusColors[s.status] || statusColors["Otros"],
-          })),
-        )
-      } catch (error) {
-        console.error("Error fetching status data:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchStatusData()
-  }, [])
+  const { data: stats, isLoading: loading } = useDashboardStats()
+  const data = useMemo<StatusData[]>(
+    () =>
+      (stats?.casesByStatus ?? []).map((s) => ({
+        status: s.status,
+        cases: s.cases,
+        fill: statusColors[s.status] || statusColors["Otros"],
+      })),
+    [stats],
+  )
 
   if (loading) {
     return (

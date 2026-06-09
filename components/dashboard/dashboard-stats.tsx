@@ -1,34 +1,12 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { AlertTriangle, FileText, Calendar, Scale, Loader2 } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
-import { fetchDashboardStats, type DashboardKPIs } from "@/lib/data/dashboard"
+import { useDashboardStats } from "@/lib/queries/dashboard"
 
 export function DashboardStats() {
-  const [stats, setStats] = useState<DashboardKPIs | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const supabase = createClient()
-
-  useEffect(() => {
-    fetchStats()
-  }, [])
-
-  const fetchStats = async () => {
-    try {
-      setIsLoading(true)
-      setError(null)
-      const data = await fetchDashboardStats(supabase)
-      setStats(data.kpis)
-    } catch (err) {
-      console.error("Error fetching stats:", err)
-      setError("Error al cargar estadísticas")
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const { data, isLoading, error, refetch } = useDashboardStats()
+  const stats = data?.kpis ?? null
 
   if (isLoading) {
     return (
@@ -50,9 +28,13 @@ export function DashboardStats() {
         <Card className="border-slate-200 col-span-full">
           <CardContent className="flex items-center justify-center h-32">
             <div className="text-center">
-              <p className="text-slate-600 mb-2">{error || "No se pudieron cargar las estadísticas"}</p>
+              <p className="text-slate-600 mb-2">
+                {error instanceof Error
+                  ? "Error al cargar estadísticas"
+                  : "No se pudieron cargar las estadísticas"}
+              </p>
               <button
-                onClick={fetchStats}
+                onClick={() => refetch()}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
               >
                 Reintentar

@@ -15,6 +15,8 @@ import { ResourcesForm } from "./forms/resources-form"
 import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase/client"
 import { Badge } from "@/components/ui/badge"
+import { useQueryClient } from "@tanstack/react-query"
+import { queryKeys } from "@/lib/queries/keys"
 
 interface CaseFormProps {
   mode: "create" | "edit"
@@ -41,6 +43,7 @@ const getEmptyVictimData = () => ({
 export function CaseForm({ mode, caseId }: CaseFormProps) {
   const router = useRouter()
   const { toast } = useToast()
+  const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState("victim")
   const [isSaving, setIsSaving] = useState(false)
   const [isLoading, setIsLoading] = useState(mode === "edit")
@@ -1226,6 +1229,10 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
             ? "Los cambios han sido guardados correctamente."
             : `Se han registrado ${formData.victims.length} víctima(s) correctamente.`,
       })
+
+      // Listados y dashboard quedaron stale tras el insert/update.
+      queryClient.invalidateQueries({ queryKey: queryKeys.casesList })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats })
 
       router.push("/casos")
     } catch (error: any) {

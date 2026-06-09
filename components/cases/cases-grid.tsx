@@ -1,13 +1,12 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Calendar, MapPin, User, Search, Loader2, Users } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
 import { formatDateUTC } from "@/lib/utils"
-import { fetchCasesList, type CaseListItem } from "@/lib/data/casos"
+import { type CaseListItem } from "@/lib/data/casos"
+import { useCasesList } from "@/lib/queries/casos"
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -47,28 +46,7 @@ interface CasesGridProps {
 }
 
 export function CasesGrid({ filters = {} }: CasesGridProps) {
-  const [cases, setCases] = useState<CaseListItem[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const supabase = createClient()
-
-  useEffect(() => {
-    fetchCases()
-  }, [])
-
-  const fetchCases = async () => {
-    try {
-      setIsLoading(true)
-      setError(null)
-      const data = await fetchCasesList(supabase)
-      setCases(data)
-    } catch (err) {
-      console.error("Error fetching cases:", err)
-      setError("Error al cargar los casos")
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const { data: cases = [], isLoading, error, refetch } = useCasesList()
 
   const displayLocation = (c: CaseListItem) =>
     c.municipio !== "No especificado" ? c.municipio : c.provincia
@@ -139,8 +117,8 @@ export function CasesGrid({ filters = {} }: CasesGridProps) {
       <div className="text-center py-12">
         <Search className="w-12 h-12 text-red-400 mx-auto mb-4" />
         <h3 className="text-lg font-medium text-slate-900 mb-2">Error al cargar casos</h3>
-        <p className="text-slate-600 mb-4">{error}</p>
-        <button onClick={fetchCases} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+        <p className="text-slate-600 mb-4">Error al cargar los casos</p>
+        <button onClick={() => refetch()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
           Reintentar
         </button>
       </div>

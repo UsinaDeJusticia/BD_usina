@@ -1,11 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Loader2 } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
-import { fetchDashboardStats } from "@/lib/data/dashboard"
+import { useDashboardStats } from "@/lib/queries/dashboard"
 
 interface ProvinceData {
   province: string
@@ -57,35 +56,18 @@ const getPointColor = (cases: number) => {
 }
 
 export function ArgentinaMap() {
-  const [caseLocations, setCaseLocations] = useState<ProvinceData[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const supabase = createClient()
-
-  useEffect(() => {
-    fetchCasesByProvince()
-  }, [])
-
-  const fetchCasesByProvince = async () => {
-    try {
-      setIsLoading(true)
-      setError(null)
-      const stats = await fetchDashboardStats(supabase)
-      // La RPC ya devuelve los agregados ordenados; sólo agregamos coords.
-      setCaseLocations(
-        stats.casesByProvince.map((p) => ({
-          province: p.provincia,
-          cases: p.cases,
-          coordinates: provinceCoordinates[p.provincia] || { x: 50, y: 50 },
-        })),
-      )
-    } catch (err) {
-      console.error("Error fetching case locations:", err)
-      setError("Error al cargar la distribución de casos")
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const { data: stats, isLoading, error, refetch } = useDashboardStats()
+  // La RPC ya devuelve los agregados ordenados por casos desc; sólo
+  // adjuntamos las coordenadas hardcoded de cada provincia.
+  const caseLocations = useMemo<ProvinceData[]>(
+    () =>
+      (stats?.casesByProvince ?? []).map((p) => ({
+        province: p.provincia,
+        cases: p.cases,
+        coordinates: provinceCoordinates[p.provincia] || { x: 50, y: 50 },
+      })),
+    [stats],
+  )
 
   if (isLoading) {
     return (
@@ -113,9 +95,9 @@ export function ArgentinaMap() {
         </CardHeader>
         <CardContent>
           <div className="text-center py-12">
-            <p className="text-slate-600 mb-4">{error}</p>
+            <p className="text-slate-600 mb-4">Error al cargar la distribución de casos</p>
             <button
-              onClick={fetchCasesByProvince}
+              onClick={() => refetch()}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
               Reintentar

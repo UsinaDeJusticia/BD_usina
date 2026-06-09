@@ -5,8 +5,8 @@ import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { MapPin, User, Loader2, Users } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
-import { fetchCasesList, type CaseListItem } from "@/lib/data/casos"
+import { type CaseListItem } from "@/lib/data/casos"
+import { useCasesList } from "@/lib/queries/casos"
 
 type CaseData = CaseListItem
 
@@ -115,15 +115,8 @@ function ScrollingRow({ cases, direction, speed }: ScrollingRowProps) {
 }
 
 export function AnimatedCasesGrid() {
-  const [cases, setCases] = useState<CaseData[]>([])
+  const { data: cases = [], isLoading, error, refetch } = useCasesList()
   const [rows, setRows] = useState<CaseData[][]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const supabase = createClient()
-
-  useEffect(() => {
-    fetchCases()
-  }, [])
 
   useEffect(() => {
     if (cases.length > 0) {
@@ -135,20 +128,6 @@ export function AnimatedCasesGrid() {
       setRows(caseRows)
     }
   }, [cases])
-
-  const fetchCases = async () => {
-    try {
-      setIsLoading(true)
-      setError(null)
-      const data = await fetchCasesList(supabase)
-      setCases(data)
-    } catch (err) {
-      console.error("Error fetching cases:", err)
-      setError("Error al cargar los casos")
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   if (isLoading) {
     return (
@@ -164,10 +143,10 @@ export function AnimatedCasesGrid() {
       <div className="text-center py-12">
         <h2 className="text-3xl font-bold text-slate-900 font-heading mb-4">Casos Recientes</h2>
         <p className="text-lg text-slate-600 max-w-2xl mx-auto mb-8">
-          {error || "No hay casos disponibles para mostrar"}
+          {error ? "Error al cargar los casos" : "No hay casos disponibles para mostrar"}
         </p>
         {error && (
-          <button onClick={fetchCases} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <button onClick={() => refetch()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             Reintentar
           </button>
         )}

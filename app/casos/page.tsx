@@ -6,9 +6,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { MapPin, User, Loader2, ChevronLeft, ChevronRight, ArrowLeft, Phone, Users } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
 import { CasesFilters } from "@/components/cases/cases-filters"
-import { fetchCasesList, type CaseListItem } from "@/lib/data/casos"
+import { type CaseListItem } from "@/lib/data/casos"
+import { useCasesList } from "@/lib/queries/casos"
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -90,10 +90,8 @@ function CaseCard({ case: caseData }: CaseCardProps) {
 }
 
 export default function CasosPage() {
-  const [cases, setCases] = useState<CaseListItem[]>([])
+  const { data: cases = [], isLoading, error, refetch } = useCasesList()
   const [filteredCases, setFilteredCases] = useState<CaseListItem[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [filters, setFilters] = useState({
     dateFrom: "",
@@ -106,29 +104,10 @@ export default function CasosPage() {
   })
 
   const casesPerPage = 12
-  const supabase = createClient()
-
-  useEffect(() => {
-    fetchCases()
-  }, [])
 
   useEffect(() => {
     applyFilters()
   }, [cases, filters])
-
-  const fetchCases = async () => {
-    try {
-      setIsLoading(true)
-      setError(null)
-      const data = await fetchCasesList(supabase)
-      setCases(data)
-    } catch (err) {
-      console.error("Error fetching cases:", err)
-      setError("Error al cargar los casos")
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const applyFilters = () => {
     let filtered = [...cases]
@@ -196,8 +175,8 @@ export default function CasosPage() {
       <div className="container mx-auto px-4 py-8">
         <div className="text-center py-12">
           <h1 className="text-3xl font-bold text-slate-900 font-heading mb-4">Error</h1>
-          <p className="text-lg text-slate-600 max-w-2xl mx-auto mb-8">{error}</p>
-          <Button onClick={fetchCases} className="bg-blue-600 hover:bg-blue-700">
+          <p className="text-lg text-slate-600 max-w-2xl mx-auto mb-8">Error al cargar los casos</p>
+          <Button onClick={() => refetch()} className="bg-blue-600 hover:bg-blue-700">
             Reintentar
           </Button>
         </div>
