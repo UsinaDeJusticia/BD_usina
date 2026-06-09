@@ -40,9 +40,12 @@ interface CaseCardProps {
 }
 
 function CaseCard({ case: caseData }: CaseCardProps) {
+  // `content-visibility: auto` + `contain-intrinsic-size` evitan
+  // pintar y layoutear las cards que están fuera del viewport mientras
+  // el marquee las arrastra (la mayoría del tiempo).
   return (
     <Link href={`/casos/${caseData.id}`}>
-      <Card className="w-80 flex-shrink-0 hover:shadow-lg transition-all duration-300 border-slate-200 hover:border-blue-300 cursor-pointer hover:scale-105">
+      <Card className="w-80 flex-shrink-0 hover:shadow-lg transition-all duration-300 border-slate-200 hover:border-blue-300 cursor-pointer hover:scale-105 [content-visibility:auto] [contain-intrinsic-size:auto_220px]">
         <CardContent className="p-6">
           <div className="space-y-4">
             <div>
@@ -104,6 +107,10 @@ function ScrollingRow({ cases, direction, speed }: ScrollingRowProps) {
         className={`flex gap-6 ${direction === "left" ? "animate-scroll-left" : "animate-scroll-right"}`}
         style={{
           animationDuration: `${speed}s`,
+          // Avisa al navegador que esta capa va a transformarse en cada
+          // frame para que la promueva a su propia compositor layer y
+          // evite repaints del layout principal.
+          willChange: "transform",
         }}
       >
         {duplicatedCases.map((caseData, index) => (
@@ -114,11 +121,18 @@ function ScrollingRow({ cases, direction, speed }: ScrollingRowProps) {
   )
 }
 
+// Vista animada de la home: vitrina, no listado completo. Limitamos a
+// los más recientes para no triplicar 200 cards en el DOM (3x = animación
+// de marquee). Con la query ordenada por created_at desc esto deja los
+// últimos 24 casos -> 6 filas de 4 -> ~72 nodos animados en el DOM.
+const VITRINA_MAX_CASES = 24
+
 export function AnimatedCasesGrid() {
-  const { data: cases = [], isLoading, error, refetch } = useCasesList()
+  const { data: allCases = [], isLoading, error, refetch } = useCasesList()
   const [rows, setRows] = useState<CaseData[][]>([])
 
   useEffect(() => {
+    const cases = allCases.slice(0, VITRINA_MAX_CASES)
     if (cases.length > 0) {
       const chunkSize = 4
       const caseRows = []
@@ -127,7 +141,10 @@ export function AnimatedCasesGrid() {
       }
       setRows(caseRows)
     }
-  }, [cases])
+  }, [allCases])
+
+  // Para chequeos de "no hay nada" usamos el dataset original (no la slice).
+  const cases = allCases
 
   if (isLoading) {
     return (
