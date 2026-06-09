@@ -7,20 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Calendar, MapPin, User, Search, Loader2, Users } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { formatDateUTC } from "@/lib/utils"
-
-interface CaseData {
-  id: string
-  victimName: string
-  incidentDate: string
-  location: string
-  province: string
-  status: string
-  familyContactName: string
-  familyRelationship: string
-  familyContactPhone: string
-  hechoId: string
-  totalVictimsInHecho: number
-}
+import { fetchCasesList, type CaseListItem } from "@/lib/data/casos"
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -60,7 +47,7 @@ interface CasesGridProps {
 }
 
 export function CasesGrid({ filters = {} }: CasesGridProps) {
-  const [cases, setCases] = useState<CaseData[]>([])
+  const [cases, setCases] = useState<CaseListItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const supabase = createClient()
@@ -73,92 +60,8 @@ export function CasesGrid({ filters = {} }: CasesGridProps) {
     try {
       setIsLoading(true)
       setError(null)
-
-      const { data: casosData, error: casosError } = await supabase
-        .from("casos")
-        .select(`
-          id,
-          estado_general,
-          estado,
-          hecho_id,
-          victima_id,
-          created_at,
-          victimas (
-            id,
-            nombre_completo
-          ),
-          hechos (
-            id,
-            fecha_hecho,
-            municipio,
-            provincia
-          )
-        `)
-        .order("created_at", { ascending: false })
-
-      if (casosError) throw casosError
-
-      const hechoVictimCounts: Record<string, number> = {}
-      for (const caso of casosData || []) {
-        if (caso.hecho_id) {
-          hechoVictimCounts[caso.hecho_id] = (hechoVictimCounts[caso.hecho_id] || 0) + 1
-        }
-      }
-
-      const transformedCases: CaseData[] = await Promise.all(
-        (casosData || []).map(async (caso: any) => {
-          const victima = caso.victimas || {}
-          const hecho = caso.hechos || {}
-
-          const { data: seguimientoData, error: segError } = await supabase
-            .from("seguimiento")
-            .select("lista_contactos_familiares")
-            .eq("hecho_id", caso.hecho_id)
-            .order("created_at", { ascending: true })
-            .limit(1)
-            .maybeSingle()
-
-          if (segError && segError.code !== "PGRST116") {
-            console.log("[v0] Error fetching seguimiento:", segError)
-          }
-
-          let familyContactName = "No especificado"
-          let familyRelationship = "Familiar"
-          let familyContactPhone = "No especificado"
-
-          if (seguimientoData?.lista_contactos_familiares) {
-            const contactos = seguimientoData.lista_contactos_familiares as any[]
-            if (contactos && contactos.length > 0) {
-              const primerContacto = contactos[0]
-              familyContactName = primerContacto.nombre || "No especificado"
-              familyRelationship = primerContacto.parentesco || "Familiar"
-              const telefono = primerContacto.telefono
-              familyContactPhone = telefono && telefono.trim() !== "" ? telefono : "No especificado"
-            }
-          }
-
-          return {
-            id: caso.id,
-            victimName: victima.nombre_completo || "Sin nombre",
-            incidentDate: hecho.fecha_hecho || new Date().toISOString(),
-            location: hecho.municipio || hecho.provincia || "No especificado",
-            province: hecho.provincia || "No especificado",
-            status:
-              caso.estado && caso.estado.trim() !== ""
-                ? caso.estado
-                : caso.estado_general && caso.estado_general.trim() !== ""
-                  ? caso.estado_general
-                  : "En investigación",
-            familyContactName,
-            familyRelationship,
-            familyContactPhone,
-            hechoId: caso.hecho_id,
-            totalVictimsInHecho: caso.hecho_id ? hechoVictimCounts[caso.hecho_id] : 1,
-          }
-        }),
-      )
-
-      setCases(transformedCases)
+      const data = await fetchCasesList(supabase)
+      setCases(data)
     } catch (err) {
       console.error("Error fetching cases:", err)
       setError("Error al cargar los casos")
@@ -166,6 +69,9 @@ export function CasesGrid({ filters = {} }: CasesGridProps) {
       setIsLoading(false)
     }
   }
+
+  const displayLocation = (c: CaseListItem) =>
+    c.municipio !== "No especificado" ? c.municipio : c.provincia
 
   const filteredCases = cases.filter((case_) => {
     // Date range filter
@@ -182,12 +88,12 @@ export function CasesGrid({ filters = {} }: CasesGridProps) {
     }
 
     // Province filter
-    if (filters.province && case_.province !== filters.province) {
+    if (filters.province && case_.provincia !== filters.province) {
       return false
     }
 
     // Location filter (partial match)
-    if (filters.location && !case_.location.toLowerCase().includes(filters.location.toLowerCase())) {
+    if (filters.location && !displayLocation(case_).toLowerCase().includes(filters.location.toLowerCase())) {
       return false
     }
 
@@ -210,7 +116,7 @@ export function CasesGrid({ filters = {} }: CasesGridProps) {
     if (filters.searchTerm) {
       const searchLower = filters.searchTerm.toLowerCase()
       const matchesName = case_.victimName.toLowerCase().includes(searchLower)
-      const matchesLocation = case_.location.toLowerCase().includes(searchLower)
+      const matchesLocation = displayLocation(case_).toLowerCase().includes(searchLower)
       if (!matchesName && !matchesLocation) {
         return false
       }
@@ -284,13 +190,14 @@ export function CasesGrid({ filters = {} }: CasesGridProps) {
 
                     <div className="flex items-center gap-2">
                       <MapPin className="w-4 h-4 text-slate-400" />
-                      <span className="line-clamp-1">{case_.location}</span>
+                      <span className="line-clamp-1">{displayLocation(case_)}</span>
                     </div>
 
                     <div className="flex items-center gap-2">
                       <User className="w-4 h-4 text-slate-400" />
                       <span className="line-clamp-1">
-                        {case_.familyContactName} - {case_.familyRelationship}
+                        {case_.familyContactName}
+                        {case_.familyRelationship ? ` - ${case_.familyRelationship}` : ""}
                       </span>
                     </div>
 

@@ -6,20 +6,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { MapPin, User, Loader2, Users } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { fetchCasesList, type CaseListItem } from "@/lib/data/casos"
 
-interface CaseData {
-  id: string
-  victimName: string
-  incidentDate: string
-  location: string
-  province: string
-  status: string
-  familyContactName: string
-  familyRelationship: string
-  familyContactPhone: string
-  hechoId: string
-  totalVictimsInHecho: number
-}
+type CaseData = CaseListItem
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -66,7 +55,9 @@ function CaseCard({ case: caseData }: CaseCardProps) {
             <div className="space-y-2 text-sm text-slate-600">
               <div className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-blue-600" />
-                <span className="line-clamp-1">{caseData.location}</span>
+                <span className="line-clamp-1">
+                  {caseData.municipio !== "No especificado" ? caseData.municipio : caseData.provincia}
+                </span>
               </div>
 
               <div className="flex items-center gap-2">
@@ -149,102 +140,8 @@ export function AnimatedCasesGrid() {
     try {
       setIsLoading(true)
       setError(null)
-
-      const { data: casosData, error: casosError } = await supabase
-        .from("casos")
-        .select(`
-          id,
-          estado_general,
-          estado,
-          hecho_id,
-          victima_id,
-          created_at,
-          victimas (
-            id,
-            nombre_completo
-          ),
-          hechos (
-            id,
-            fecha_hecho,
-            municipio,
-            provincia
-          )
-        `)
-        .order("created_at", { ascending: false })
-
-      if (casosError) throw casosError
-
-      const hechoVictimCounts: Record<string, number> = {}
-      for (const caso of casosData || []) {
-        if (caso.hecho_id) {
-          hechoVictimCounts[caso.hecho_id] = (hechoVictimCounts[caso.hecho_id] || 0) + 1
-        }
-      }
-
-      const transformedCases: CaseData[] = await Promise.all(
-        (casosData || []).map(async (caso: any) => {
-          const victima = caso.victimas || {}
-          const hecho = caso.hechos || {}
-
-          console.log(
-            `[v0] Caso ${victima.nombre_completo || "Sin nombre"} - estado: "${caso.estado}", estado_general: "${caso.estado_general}"`,
-          )
-
-          const { data: seguimientoData, error: segError } = await supabase
-            .from("seguimiento")
-            .select("lista_contactos_familiares")
-            .eq("hecho_id", caso.hecho_id)
-            .order("created_at", { ascending: true })
-            .limit(1)
-            .maybeSingle()
-
-          if (segError && segError.code !== "PGRST116") {
-            console.log("[v0] Error fetching seguimiento:", segError)
-          }
-
-          let familyContactName = "No especificado"
-          let familyRelationship = "Familiar"
-          let familyContactPhone = "No especificado"
-
-          if (seguimientoData?.lista_contactos_familiares) {
-            const contactos = seguimientoData.lista_contactos_familiares as any[]
-            if (contactos && contactos.length > 0) {
-              const primerContacto = contactos[0]
-              familyContactName = primerContacto.nombre || "No especificado"
-              familyRelationship = primerContacto.parentesco || "Familiar"
-              const telefono = primerContacto.telefono
-              familyContactPhone = telefono && telefono.trim() !== "" ? telefono : "No especificado"
-            }
-          }
-
-          const finalStatus =
-            caso.estado && caso.estado.trim() !== ""
-              ? caso.estado
-              : caso.estado_general && caso.estado_general.trim() !== ""
-                ? caso.estado_general
-                : "En investigación"
-
-          console.log(`[v0] Caso ${victima.nombre_completo || "Sin nombre"} - status final: "${finalStatus}"`)
-
-          return {
-            id: caso.id,
-            victimName: victima.nombre_completo || "Sin nombre",
-            incidentDate: hecho.fecha_hecho || new Date().toISOString(),
-            location: hecho.municipio || hecho.provincia || "No especificado",
-            province: hecho.provincia || "No especificado",
-            status: finalStatus,
-            familyContactName,
-            familyRelationship,
-            familyContactPhone,
-            hechoId: caso.hecho_id,
-            totalVictimsInHecho: caso.hecho_id ? hechoVictimCounts[caso.hecho_id] : 1,
-          }
-        }),
-      )
-
-      console.log("[v0] Transformed cases sample:", transformedCases.slice(0, 2))
-
-      setCases(transformedCases)
+      const data = await fetchCasesList(supabase)
+      setCases(data)
     } catch (err) {
       console.error("Error fetching cases:", err)
       setError("Error al cargar los casos")
