@@ -71,6 +71,7 @@ interface Victima {
 
 interface Hecho {
   id: string
+  victima_id: string | null
   fecha_hecho: string | null
   fecha_fallecimiento: string | null
   municipio: string | null
@@ -539,11 +540,86 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
     })
   }
 
+  /**
+   * Borrado completo de la ficha.
+   *
+   * Los FK apuntan de `casos` hacia `victimas`/`hechos`, así que borrar
+   * sólo la fila de `casos` dejaba huérfanos en BD (víctima, hecho,
+   * imputados, recursos) y en storage (archivos adjuntos). Acá se borra
+   * todo explícitamente, sin depender de cascades cuya configuración en
+   * producción no está versionada.
+   *
+   * Caso especial: si el hecho es compartido con fichas hermanas
+   * (varias víctimas del mismo hecho), sólo se purga lo propio de esta
+   * víctima — el hecho, sus imputados y sus archivos siguen en uso.
+   */
   const handleDelete = async () => {
+    if (!caseData) return
+    const run = async (query: PromiseLike<{ error: any }>) => {
+      const { error } = await query
+      if (error) throw error
+    }
     try {
       setIsDeleting(true)
-      const { error } = await supabase.from("casos").delete().eq("id", caseId)
-      if (error) throw error
+
+      const victimaId = caseData.victima?.id ?? null
+      const hechoId = caseData.hecho?.id ?? null
+      const hasSiblings = caseData.hermanos_hecho.length > 0
+      const imputadoIds = caseData.imputados.map((i) => i.id)
+
+      // 1. Archivos del bucket. Con hermanos sólo los recursos de la
+      //    víctima; sin hermanos, todos los de la ficha. Si el remove
+      //    falla seguimos igual: preferimos un archivo huérfano a una
+      //    ficha a medio borrar.
+      const recursosToPurge = hasSiblings
+        ? caseData.recursos.filter((r) => r.victima_id === victimaId)
+        : caseData.recursos
+      const storagePaths = recursosToPurge
+        .map((r) => r.archivo_path)
+        .filter((p): p is string => !!p)
+      if (storagePaths.length > 0) {
+        await supabase.storage.from("archivos-casos").remove(storagePaths)
+      }
+
+      // 2. Filas en BD, de hijos a padres.
+      if (!hasSiblings && hechoId) {
+        if (imputadoIds.length > 0) {
+          await run(supabase.from("fechas_juicio").delete().in("imputado_id", imputadoIds))
+          await run(supabase.from("instancias_judiciales").delete().in("imputado_id", imputadoIds))
+          await run(supabase.from("recursos").delete().in("imputado_id", imputadoIds))
+        }
+        await run(supabase.from("recursos").delete().eq("hecho_id", hechoId))
+        if (victimaId) {
+          await run(supabase.from("recursos").delete().eq("victima_id", victimaId))
+        }
+        await run(supabase.from("imputados").delete().eq("hecho_id", hechoId))
+        await run(supabase.from("seguimiento").delete().eq("hecho_id", hechoId))
+        await run(supabase.from("casos").delete().eq("hecho_id", hechoId))
+        await run(supabase.from("hechos").delete().eq("id", hechoId))
+      } else if (victimaId) {
+        // Hecho compartido: borrar sólo lo propio de esta víctima.
+        await run(supabase.from("recursos").delete().eq("victima_id", victimaId))
+        // `hechos.victima_id` tiene ON DELETE CASCADE: si apunta a esta
+        // víctima hay que reasignarlo a un hermano antes de borrarla, o
+        // el hecho entero (y las fichas hermanas) se irían con ella.
+        if (hechoId && caseData.hecho?.victima_id === victimaId) {
+          await run(
+            supabase
+              .from("hechos")
+              .update({ victima_id: caseData.hermanos_hecho[0].victima_id })
+              .eq("id", hechoId),
+          )
+        }
+        await run(supabase.from("casos").delete().eq("id", caseId))
+      }
+
+      if (victimaId) {
+        // Cascadea la fila de `casos` (casos.victima_id) si quedara viva.
+        await run(supabase.from("victimas").delete().eq("id", victimaId))
+      } else {
+        await run(supabase.from("casos").delete().eq("id", caseId))
+      }
+
       // Listados y dashboard quedaron stale tras el delete.
       queryClient.invalidateQueries({ queryKey: queryKeys.casesList })
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats })

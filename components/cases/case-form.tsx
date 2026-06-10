@@ -674,6 +674,25 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
 
           // Delete imputados that were removed from the form (diffing)
           const imputadosToDelete = existingImputadoIds.filter((id) => !formImputadoIds.includes(id))
+
+          // Purgar del bucket los archivos de los recursos de estos
+          // imputados ANTES de borrar las filas, o quedan huérfanos en
+          // storage sin forma de rastrearlos.
+          if (imputadosToDelete.length > 0) {
+            const { data: recursosConArchivo } = await supabase
+              .from("recursos")
+              .select("archivo_path")
+              .in("imputado_id", imputadosToDelete)
+              .not("archivo_path", "is", null)
+
+            const pathsToRemove = (recursosConArchivo || [])
+              .map((r) => r.archivo_path)
+              .filter((p): p is string => !!p)
+            if (pathsToRemove.length > 0) {
+              await supabase.storage.from("archivos-casos").remove(pathsToRemove)
+            }
+          }
+
           for (const idToDelete of imputadosToDelete) {
             // First delete related records
             await supabase.from("recursos").delete().eq("imputado_id", idToDelete)
