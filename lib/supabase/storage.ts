@@ -10,19 +10,9 @@ export interface UploadResult {
 }
 
 export async function uploadFile(supabase: SupabaseClient, file: File, folder = "general"): Promise<UploadResult> {
-  console.log("[v0] uploadFile - Starting upload:", {
-    fileName: file.name,
-    fileSize: file.size,
-    folder,
-    bucket: BUCKET_NAME,
-  })
-
-  // Generate unique file name
   const timestamp = Date.now()
   const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_")
   const filePath = `${folder}/${timestamp}_${sanitizedName}`
-
-  console.log("[v0] uploadFile - File path:", filePath)
 
   const { data, error } = await supabase.storage.from(BUCKET_NAME).upload(filePath, file, {
     cacheControl: "3600",
@@ -30,16 +20,9 @@ export async function uploadFile(supabase: SupabaseClient, file: File, folder = 
   })
 
   if (error) {
-    console.error("[v0] uploadFile - Upload error:", {
-      message: error.message,
-      name: error.name,
-      cause: error.cause,
-      fullError: JSON.stringify(error),
-    })
+    console.error("uploadFile error:", error.message)
     return { success: false, error: error.message }
   }
-
-  console.log("[v0] uploadFile - Upload successful:", data)
 
   // El bucket es privado. Devolvemos la URL del proxy autenticado en /api/files
   // (ver app/api/files/[...path]/route.ts). Esa ruta valida sesion + whitelist

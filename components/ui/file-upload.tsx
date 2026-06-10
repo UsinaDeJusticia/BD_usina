@@ -57,27 +57,17 @@ export function FileUpload({
 
       const supabase = createClient()
 
-      // Debug: Check if user is authenticated
       const {
         data: { session },
-        error: sessionError,
       } = await supabase.auth.getSession()
-      console.log("[v0] FileUpload - Session check:", {
-        hasSession: !!session,
-        userId: session?.user?.id,
-        sessionError: sessionError?.message,
-      })
 
       if (!session) {
-        console.log("[v0] FileUpload - No session found, upload will likely fail")
         setError("No hay sesión activa. Por favor, inicia sesión nuevamente.")
         setIsUploading(false)
         return
       }
 
-      console.log("[v0] FileUpload - Attempting upload with authenticated client")
       const result = await uploadFile(supabase, file, folder)
-      console.log("[v0] FileUpload - Upload result:", result)
 
       if (result.success && result.path && result.url) {
         onUpload({
