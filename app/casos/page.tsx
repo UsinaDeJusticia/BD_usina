@@ -6,22 +6,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { MapPin, User, Loader2, ChevronLeft, ChevronRight, ArrowLeft, Phone, Users } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
 import { CasesFilters } from "@/components/cases/cases-filters"
-
-interface CaseData {
-  id: string
-  victimName: string
-  incidentDate: string
-  location: string
-  province: string
-  status: string
-  familyContactName: string
-  familyRelationship: string
-  familyContactPhone: string
-  hechoId: string
-  totalVictimsInHecho: number
-}
+import { type CaseListItem } from "@/lib/data/casos"
+import { useCasesList } from "@/lib/queries/casos"
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -49,7 +36,7 @@ const getStatusColor = (status: string) => {
 }
 
 interface CaseCardProps {
-  case: CaseData
+  case: CaseListItem
 }
 
 function CaseCard({ case: caseData }: CaseCardProps) {
@@ -77,7 +64,7 @@ function CaseCard({ case: caseData }: CaseCardProps) {
               <div className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-blue-600" />
                 <span className="line-clamp-1">
-                  {caseData.location}, {caseData.province}
+                  {caseData.municipio}, {caseData.provincia}
                 </span>
               </div>
 
@@ -103,10 +90,8 @@ function CaseCard({ case: caseData }: CaseCardProps) {
 }
 
 export default function CasosPage() {
-  const [cases, setCases] = useState<CaseData[]>([])
-  const [filteredCases, setFilteredCases] = useState<CaseData[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data: cases = [], isLoading, error, refetch } = useCasesList()
+  const [filteredCases, setFilteredCases] = useState<CaseListItem[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [filters, setFilters] = useState({
     dateFrom: "",
@@ -119,116 +104,10 @@ export default function CasosPage() {
   })
 
   const casesPerPage = 12
-  const supabase = createClient()
-
-  useEffect(() => {
-    fetchCases()
-  }, [])
 
   useEffect(() => {
     applyFilters()
   }, [cases, filters])
-
-  const fetchCases = async () => {
-    try {
-      setIsLoading(true)
-      setError(null)
-
-      const { data: casosData, error: casosError } = await supabase
-        .from("casos")
-        .select(`
-          id,
-          estado_general,
-          estado,
-          hecho_id,
-          victima_id,
-          victimas (
-            id,
-            nombre_completo
-          ),
-          hechos (
-            id,
-            fecha_hecho,
-            municipio,
-            provincia
-          )
-        `)
-        .order("created_at", { ascending: false })
-
-      if (casosError) throw casosError
-
-      console.log("[v0] Total casos fetched:", casosData?.length)
-
-      // Group casos by hecho_id to count victims per incident
-      const hechoVictimCounts: Record<string, number> = {}
-      for (const caso of casosData || []) {
-        if (caso.hecho_id) {
-          hechoVictimCounts[caso.hecho_id] = (hechoVictimCounts[caso.hecho_id] || 0) + 1
-        }
-      }
-
-      const transformedCases: CaseData[] = await Promise.all(
-        (casosData || []).map(async (caso: any) => {
-          const victima = caso.victimas || {}
-          const hecho = caso.hechos || {}
-
-          const { data: seguimientoData, error: segError } = await supabase
-            .from("seguimiento")
-            .select("lista_contactos_familiares")
-            .eq("hecho_id", caso.hecho_id)
-            .order("created_at", { ascending: true })
-            .limit(1)
-            .maybeSingle()
-
-          console.log("[v0] Seguimiento for hecho_id", caso.hecho_id, ":", seguimientoData)
-          if (segError && segError.code !== "PGRST116") {
-            console.log("[v0] Error fetching seguimiento:", segError)
-          }
-
-          let familyContactName = "No especificado"
-          let familyRelationship = ""
-          let familyContactPhone = "No especificado"
-
-          if (seguimientoData?.lista_contactos_familiares) {
-            const contactos = seguimientoData.lista_contactos_familiares as any[]
-            if (contactos && contactos.length > 0) {
-              const primerContacto = contactos[0]
-              familyContactName = primerContacto.nombre || "No especificado"
-              familyRelationship = primerContacto.parentesco || ""
-              familyContactPhone = (primerContacto.telefono && primerContacto.telefono.trim()) || "No especificado"
-            }
-          }
-
-          return {
-            id: caso.id,
-            victimName: victima.nombre_completo || "Sin nombre",
-            incidentDate: hecho.fecha_hecho || new Date().toISOString(),
-            location: hecho.municipio || "No especificado",
-            province: hecho.provincia || "No especificado",
-            status:
-              caso.estado && caso.estado.trim() !== ""
-                ? caso.estado
-                : caso.estado_general && caso.estado_general.trim() !== ""
-                  ? caso.estado_general
-                  : "En investigación",
-            familyContactName,
-            familyRelationship,
-            familyContactPhone,
-            hechoId: caso.hecho_id,
-            totalVictimsInHecho: caso.hecho_id ? hechoVictimCounts[caso.hecho_id] : 1,
-          }
-        }),
-      )
-
-      console.log("[v0] Transformed cases sample:", transformedCases.slice(0, 2))
-      setCases(transformedCases)
-    } catch (err) {
-      console.error("Error fetching cases:", err)
-      setError("Error al cargar los casos")
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const applyFilters = () => {
     let filtered = [...cases]
@@ -238,8 +117,8 @@ export default function CasosPage() {
       filtered = filtered.filter(
         (caseData) =>
           caseData.victimName.toLowerCase().includes(searchLower) ||
-          caseData.location.toLowerCase().includes(searchLower) ||
-          caseData.province.toLowerCase().includes(searchLower),
+          caseData.municipio.toLowerCase().includes(searchLower) ||
+          caseData.provincia.toLowerCase().includes(searchLower),
       )
     }
 
@@ -251,12 +130,12 @@ export default function CasosPage() {
     }
 
     if (filters.province) {
-      filtered = filtered.filter((caseData) => caseData.province === filters.province)
+      filtered = filtered.filter((caseData) => caseData.provincia === filters.province)
     }
 
     if (filters.location) {
       const locationLower = filters.location.toLowerCase()
-      filtered = filtered.filter((caseData) => caseData.location.toLowerCase().includes(locationLower))
+      filtered = filtered.filter((caseData) => caseData.municipio.toLowerCase().includes(locationLower))
     }
 
     if (filters.status) {
@@ -296,8 +175,8 @@ export default function CasosPage() {
       <div className="container mx-auto px-4 py-8">
         <div className="text-center py-12">
           <h1 className="text-3xl font-bold text-slate-900 font-heading mb-4">Error</h1>
-          <p className="text-lg text-slate-600 max-w-2xl mx-auto mb-8">{error}</p>
-          <Button onClick={fetchCases} className="bg-blue-600 hover:bg-blue-700">
+          <p className="text-lg text-slate-600 max-w-2xl mx-auto mb-8">Error al cargar los casos</p>
+          <Button onClick={() => refetch()} className="bg-blue-600 hover:bg-blue-700">
             Reintentar
           </Button>
         </div>

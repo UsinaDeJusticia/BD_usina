@@ -15,6 +15,8 @@ import { ResourcesForm } from "./forms/resources-form"
 import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase/client"
 import { Badge } from "@/components/ui/badge"
+import { useQueryClient } from "@tanstack/react-query"
+import { queryKeys } from "@/lib/queries/keys"
 
 interface CaseFormProps {
   mode: "create" | "edit"
@@ -41,6 +43,7 @@ const getEmptyVictimData = () => ({
 export function CaseForm({ mode, caseId }: CaseFormProps) {
   const router = useRouter()
   const { toast } = useToast()
+  const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState("victim")
   const [isSaving, setIsSaving] = useState(false)
   const [isLoading, setIsLoading] = useState(mode === "edit")
@@ -65,7 +68,6 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
       otraIntervencionDescripcion: "",
     },
     resources: [],
-    victimResources: [],
   })
 
   const [realIds, setRealIds] = useState<{
@@ -266,41 +268,14 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
         }
       }
 
-      // Load seguimiento
-      const { data: seguimientoData } = await supabase.from("seguimiento").select("*").eq("hecho_id", hechoId).single()
+      // Load seguimiento. `.maybeSingle()` no rompe cuando el hecho aún no
+      // tiene una fila de seguimiento (caso real para fichas viejas).
+      const { data: seguimientoData } = await supabase.from("seguimiento").select("*").eq("hecho_id", hechoId).maybeSingle()
 
-      if (seguimientoData) {
-        setFormData((prev) => ({
-          ...prev,
-          followUp: {
-            primerContacto: seguimientoData.primer_contacto || false,
-            comoLlegoCaso: seguimientoData.como_llego_caso || "",
-            miembroAsignado: seguimientoData.miembro_asignado || "",
-            contactoFamiliar: seguimientoData.contacto_familia || "",
-            telefonoContacto: seguimientoData.telefono_contacto || "",
-            tipoAcompanamiento: seguimientoData.tipo_acompanamiento || [],
-            abogadoQuerellante: seguimientoData.abogado_querellante || "",
-            amicusCuriae: seguimientoData.amicus_curiae || false,
-            notasSeguimiento: seguimientoData.notas_seguimiento || "",
-            emailContacto: seguimientoData.email_contacto || "",
-            direccionContacto: seguimientoData.direccion_contacto || "",
-            telefonoMiembro: seguimientoData.telefono_miembro || "",
-            emailMiembro: seguimientoData.email_miembro || "",
-            fechaAsignacion: seguimientoData.fecha_asignacion || "",
-            proximasAcciones: seguimientoData.proximas_acciones || "",
-            parentescoContacto: seguimientoData.parentesco_contacto || "",
-            parentescoOtro: seguimientoData.parentesco_otro || "",
-            tieneAbogadoQuerellante: seguimientoData.tiene_abogado_querellante || "ns_nc",
-            abogadoUsinaAmicus: seguimientoData.abogado_usina_amicus || "",
-            abogadoAmicusFirmante: seguimientoData.abogado_amicus_firmante || "",
-            listaMiembrosAsignados: seguimientoData.lista_miembros_asignados || [],
-            listaContactosFamiliares: seguimientoData.lista_contactos_familiares || [],
-            datosAbogadosQuerellantes: seguimientoData.datos_abogados_querellantes || [],
-            otraIntervencion: seguimientoData.otra_intervencion || false,
-            otraIntervencionDescripcion: seguimientoData.otra_intervencion_descripcion || "",
-          },
-        }))
-      }
+      // Antes había acá un setFormData parcial sólo de `followUp`; abajo
+      // el setFormData completo lo cubre con los mismos campos. Quitado
+      // para evitar re-renders y la confusión de mantener dos lugares
+      // en sync.
 
       // Fetch imputados
       let imputadosData: any[] = []
@@ -442,7 +417,6 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
           archivo_size: r.archivo_size,
           input_mode: r.archivo_path ? "file" : "url",
         })),
-        victimResources: [],
       })
     } catch (error: any) {
       toast({
@@ -479,6 +453,27 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
     fallecido: accused.fallecido || false,
     es_reincidente: accused.esReincidente || false,
     cargos: accused.cargos || null,
+  })
+
+  // Un recurso es "existente en BD" si su id es un UUID v4 real (36 chars
+  // con guiones, no empieza con "temp-"). El resto (null, "", "temp-*",
+  // numérico, o con flag isNew) es un recurso recién agregado en el form.
+  // Antes esta misma lógica estaba copiada 3 veces en handleSave.
+  const isExistingResource = (r: any): boolean =>
+    typeof r.id === "string" &&
+    r.id.length === 36 &&
+    r.id.includes("-") &&
+    !r.id.startsWith("temp-")
+
+  // Campos editables de un recurso. Los `archivo_*` no se actualizan acá:
+  // si el usuario reemplaza un archivo, el flujo es borrar el recurso
+  // viejo (resourcesToDelete) y crear uno nuevo.
+  const buildResourceUpdate = (resource: any) => ({
+    tipo: resource.tipo && resource.tipo !== "" ? resource.tipo : "other",
+    titulo: resource.titulo || resource.archivo_nombre || "Sin título",
+    url: resource.url || null,
+    fuente: resource.fuente || null,
+    descripcion: resource.descripcion || null,
   })
 
   const addVictim = () => {
@@ -523,7 +518,7 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
             const pathsToDelete = resourcesToRemove.map((r) => r.archivo_path).filter((p): p is string => !!p)
 
             if (pathsToDelete.length > 0) {
-              await supabase.storage.from("case-files").remove(pathsToDelete)
+              await supabase.storage.from("archivos-casos").remove(pathsToDelete)
             }
           }
 
@@ -555,36 +550,29 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
 
             if (victimError) throw victimError
 
-            // Update victim resources
+            // Update + insert de recursos de la víctima.
             if (victim.resources && Array.isArray(victim.resources) && victim.resources.length > 0) {
-              const newVictimResources = victim.resources.filter((r: any) => {
-                const hasNoId = !r.id || r.id === ""
-                const hasTempId = typeof r.id === "string" && r.id.startsWith("temp-")
-                const hasNumericId = typeof r.id === "number"
-                const hasNewFlag = r.isNew === true
-                const hasRealUUID =
-                  typeof r.id === "string" && r.id.length === 36 && r.id.includes("-") && !r.id.startsWith("temp-")
+              // 1) Actualizar los que ya estaban en BD por si fueron editados.
+              for (const resource of victim.resources.filter(isExistingResource)) {
+                const { error: updateError } = await supabase
+                  .from("recursos")
+                  .update(buildResourceUpdate(resource))
+                  .eq("id", resource.id)
+                if (updateError) throw updateError
+              }
 
-                return !hasRealUUID && (hasNoId || hasTempId || hasNumericId || hasNewFlag)
-              })
-
-              // Solo guardar si tiene archivo o URL
-              for (const resource of newVictimResources) {
+              // 2) Insertar los nuevos (sólo si tienen archivo o URL).
+              for (const resource of victim.resources.filter((r: any) => !isExistingResource(r))) {
                 if (resource.url || resource.archivo_path) {
-                  const resourceData = {
+                  const { error: resourceError } = await supabase.from("recursos").insert([{
                     victima_id: victim.id,
                     hecho_id: hechoId,
-                    tipo: resource.tipo && resource.tipo !== "" ? resource.tipo : "other",
-                    titulo: resource.titulo || resource.archivo_nombre || "Sin título",
-                    url: resource.url || null,
-                    fuente: resource.fuente || null,
-                    descripcion: resource.descripcion || null,
+                    ...buildResourceUpdate(resource),
                     archivo_path: resource.archivo_path || null,
                     archivo_nombre: resource.archivo_nombre || null,
                     archivo_tipo: resource.archivo_tipo || null,
                     archivo_size: resource.archivo_size ? Number(resource.archivo_size) : null,
-                  }
-                  const { error: resourceError } = await supabase.from("recursos").insert([resourceData])
+                  }])
                   if (resourceError) throw resourceError
                 }
               }
@@ -758,13 +746,6 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
                   const hasInstanciaId =
                     instancia.id && typeof instancia.id === "string" && !instancia.id.startsWith("temp-")
 
-                  console.log("[v0] Saving instancia judicial:", {
-                    id: instancia.id,
-                    ordenNivel: instancia.ordenNivel,
-                    numeroCausa: instancia.numeroCausa,
-                    hasInstanciaId,
-                  })
-
                   try {
                     if (hasInstanciaId) {
                       // Update existing instancia
@@ -809,34 +790,27 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
               }
 
               if (accused.resources && Array.isArray(accused.resources)) {
-                const newResources = accused.resources.filter((r: any) => {
-                  const hasNoId = !r.id || r.id === ""
-                  const hasTempId = typeof r.id === "string" && r.id.startsWith("temp-")
-                  const hasNumericId = typeof r.id === "number"
-                  const hasNewFlag = r.isNew === true
-                  const hasRealUUID =
-                    typeof r.id === "string" && r.id.length === 36 && r.id.includes("-") && !r.id.startsWith("temp-")
+                // 1) Update de los que ya estaban en BD.
+                for (const resource of accused.resources.filter(isExistingResource)) {
+                  const { error: updateError } = await supabase
+                    .from("recursos")
+                    .update(buildResourceUpdate(resource))
+                    .eq("id", resource.id)
+                  if (updateError) throw updateError
+                }
 
-                  return !hasRealUUID && (hasNoId || hasTempId || hasNumericId || hasNewFlag)
-                })
-                // Solo guardar si tiene archivo o URL
-                for (const resource of newResources) {
+                // 2) Insert de los nuevos (sólo si tienen archivo o URL).
+                for (const resource of accused.resources.filter((r: any) => !isExistingResource(r))) {
                   if (resource.url || resource.archivo_path) {
-                    await supabase.from("recursos").insert([
-                      {
-                        imputado_id: accusedId,
-                        hecho_id: hechoId,
-                        tipo: resource.tipo && resource.tipo !== "" ? resource.tipo : "other",
-                        titulo: resource.titulo || resource.archivo_nombre || "Sin título",
-                        url: resource.url || null,
-                        fuente: resource.fuente || null,
-                        descripcion: resource.descripcion || null,
-                        archivo_path: resource.archivo_path || null,
-                        archivo_nombre: resource.archivo_nombre || null,
-                        archivo_tipo: resource.archivo_tipo || null,
-                        archivo_size: resource.archivo_size ? Number(resource.archivo_size) : null,
-                      },
-                    ])
+                    await supabase.from("recursos").insert([{
+                      imputado_id: accusedId,
+                      hecho_id: hechoId,
+                      ...buildResourceUpdate(resource),
+                      archivo_path: resource.archivo_path || null,
+                      archivo_nombre: resource.archivo_nombre || null,
+                      archivo_tipo: resource.archivo_tipo || null,
+                      archivo_size: resource.archivo_size ? Number(resource.archivo_size) : null,
+                    }])
                   }
                 }
               }
@@ -960,34 +934,28 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
         }
 
         if (formData.resources && Array.isArray(formData.resources) && formData.resources.length > 0) {
-          const newSeguimientoResources = formData.resources.filter((r: any) => {
-            const hasNoId = !r.id || r.id === ""
-            const hasTempId = typeof r.id === "string" && r.id.startsWith("temp-")
-            const hasNumericId = typeof r.id === "number"
-            const hasNewFlag = r.isNew === true
-            const hasRealUUID =
-              typeof r.id === "string" && r.id.length === 36 && r.id.includes("-") && !r.id.startsWith("temp-")
+          // 1) Update de recursos generales del hecho ya existentes.
+          for (const resource of formData.resources.filter(isExistingResource)) {
+            const { error: updateError } = await supabase
+              .from("recursos")
+              .update(buildResourceUpdate(resource))
+              .eq("id", resource.id)
+            if (updateError) throw updateError
+          }
 
-            return !hasRealUUID && (hasNoId || hasTempId || hasNumericId || hasNewFlag)
-          })
-
-          for (const resource of newSeguimientoResources) {
+          // 2) Insert de los nuevos (sólo si tienen archivo o URL).
+          for (const resource of formData.resources.filter((r: any) => !isExistingResource(r))) {
             if (resource.url || resource.archivo_path) {
-              const resourceData = {
+              const { error: resourceError } = await supabase.from("recursos").insert([{
                 hecho_id: hechoId,
                 imputado_id: null,
                 victima_id: null,
-                tipo: resource.tipo && resource.tipo !== "" ? resource.tipo : "other",
-                titulo: resource.titulo || resource.archivo_nombre || "Sin título",
-                url: resource.url || null,
-                fuente: resource.fuente || null,
-                descripcion: resource.descripcion || null,
+                ...buildResourceUpdate(resource),
                 archivo_path: resource.archivo_path || null,
                 archivo_nombre: resource.archivo_nombre || null,
                 archivo_tipo: resource.archivo_tipo || null,
                 archivo_size: resource.archivo_size ? Number(resource.archivo_size) : null,
-              }
-              const { error: resourceError } = await supabase.from("recursos").insert([resourceData])
+              }])
               if (resourceError) throw resourceError
             }
           }
@@ -1226,6 +1194,10 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
             ? "Los cambios han sido guardados correctamente."
             : `Se han registrado ${formData.victims.length} víctima(s) correctamente.`,
       })
+
+      // Listados y dashboard quedaron stale tras el insert/update.
+      queryClient.invalidateQueries({ queryKey: queryKeys.casesList })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats })
 
       router.push("/casos")
     } catch (error: any) {

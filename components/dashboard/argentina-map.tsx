@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Loader2 } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
+import { useDashboardStats } from "@/lib/queries/dashboard"
 
 interface ProvinceData {
   province: string
@@ -56,49 +56,18 @@ const getPointColor = (cases: number) => {
 }
 
 export function ArgentinaMap() {
-  const [caseLocations, setCaseLocations] = useState<ProvinceData[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const supabase = createClient()
-
-  useEffect(() => {
-    fetchCasesByProvince()
-  }, [])
-
-  const fetchCasesByProvince = async () => {
-    try {
-      setIsLoading(true)
-      setError(null)
-
-      const { data, error: fetchError } = await supabase.from("hechos").select("provincia")
-
-      if (fetchError) throw fetchError
-
-      // Count cases by province
-      const provinceCounts: Record<string, number> = {}
-      data.forEach((incident: any) => {
-        if (incident.provincia) {
-          provinceCounts[incident.provincia] = (provinceCounts[incident.provincia] || 0) + 1
-        }
-      })
-
-      // Transform to component format
-      const locations: ProvinceData[] = Object.entries(provinceCounts)
-        .map(([province, cases]) => ({
-          province,
-          cases,
-          coordinates: provinceCoordinates[province] || { x: 50, y: 50 },
-        }))
-        .sort((a, b) => b.cases - a.cases)
-
-      setCaseLocations(locations)
-    } catch (err) {
-      console.error("Error fetching case locations:", err)
-      setError("Error al cargar la distribución de casos")
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const { data: stats, isLoading, error, refetch } = useDashboardStats()
+  // La RPC ya devuelve los agregados ordenados por casos desc; sólo
+  // adjuntamos las coordenadas hardcoded de cada provincia.
+  const caseLocations = useMemo<ProvinceData[]>(
+    () =>
+      (stats?.casesByProvince ?? []).map((p) => ({
+        province: p.provincia,
+        cases: p.cases,
+        coordinates: provinceCoordinates[p.provincia] || { x: 50, y: 50 },
+      })),
+    [stats],
+  )
 
   if (isLoading) {
     return (
@@ -126,9 +95,9 @@ export function ArgentinaMap() {
         </CardHeader>
         <CardContent>
           <div className="text-center py-12">
-            <p className="text-slate-600 mb-4">{error}</p>
+            <p className="text-slate-600 mb-4">Error al cargar la distribución de casos</p>
             <button
-              onClick={fetchCasesByProvince}
+              onClick={() => refetch()}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
               Reintentar

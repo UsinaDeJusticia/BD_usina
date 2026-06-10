@@ -47,6 +47,8 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { FilePreviewDialog } from "@/components/ui/file-preview-dialog"
 import { formatDateUTC } from "@/lib/utils"
+import { useQueryClient } from "@tanstack/react-query"
+import { queryKeys } from "@/lib/queries/keys"
 
 interface CaseDetailContentProps {
   caseId: string
@@ -336,6 +338,7 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     fetchCaseData()
@@ -454,72 +457,74 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
     estadoGeneral: string | null,
     estado: string | null = null,
   ) => {
-    // Get imputados
-    let imputadosData: Imputado[] = []
-    if (hechoData?.id) {
-      const { data: imputadosArray } = await supabase.from("imputados").select("*").eq("hecho_id", hechoData.id)
+    // Stage 1: queries independientes en paralelo.
+    // - imputados con instancias_judiciales embebidas (elimina el N+1 anterior)
+    // - seguimiento del hecho
+    // - hermanos de hecho (otras víctimas del mismo hecho)
+    const hechoId: string | undefined = hechoData?.id
+    const victimaId: string | undefined = victimaData?.id
 
-      imputadosData = await Promise.all(
-        (imputadosArray || []).map(async (imp: any) => {
-          const { data: instanciasArray } = await supabase
-            .from("instancias_judiciales")
-            .select("*")
-            .eq("imputado_id", imp.id)
+    const [imputadosResult, seguimientoResult, hermanosResult] =
+      await Promise.all([
+        hechoId
+          ? supabase
+              .from("imputados")
+              .select("*, instancias_judiciales(*)")
+              .eq("hecho_id", hechoId)
+          : Promise.resolve({ data: [] as any[] }),
+        hechoId
+          ? supabase.from("seguimiento").select("*").eq("hecho_id", hechoId)
+          : Promise.resolve({ data: [] as any[] }),
+        hechoId && victimaId
+          ? supabase
+              .from("casos")
+              .select("id, victima_id, victimas(nombre_completo)")
+              .eq("hecho_id", hechoId)
+              .neq("victima_id", victimaId)
+          : Promise.resolve({ data: [] as any[] }),
+      ])
 
-          return {
-            ...imp,
-            instancias_judiciales: instanciasArray || [],
-          }
-        }),
-      )
-    }
+    const imputadosData: Imputado[] = (imputadosResult.data || []).map(
+      (imp: any) => ({
+        ...imp,
+        instancias_judiciales: imp.instancias_judiciales || [],
+      }),
+    )
 
-    // Get seguimiento
-    let seguimientoData: Seguimiento | null = null
-    if (hechoData?.id) {
-      const { data: seguimientoArray } = await supabase.from("seguimiento").select("*").eq("hecho_id", hechoData.id)
-      seguimientoData = seguimientoArray?.[0] || null
+    const seguimientoData: Seguimiento | null =
+      (seguimientoResult.data || [])[0] || null
+
+    const hermanosHecho: HermanoHecho[] = (hermanosResult.data || []).map(
+      (c: any) => ({
+        caso_id: c.id,
+        victima_id: c.victima_id,
+        victima_nombre: c.victimas?.nombre_completo || "Sin nombre",
+      }),
+    )
+
+    // Stage 2: un único fetch de recursos para hecho + víctima + imputados.
+    // Antes eran 2 + N queries (una por imputado); ahora es 1 sola con `.or()`.
+    const imputadoIds = imputadosData.map((i) => i.id)
+    const recursosFilters: string[] = []
+    if (hechoId) recursosFilters.push(`hecho_id.eq.${hechoId}`)
+    if (victimaId) recursosFilters.push(`victima_id.eq.${victimaId}`)
+    if (imputadoIds.length) {
+      recursosFilters.push(`imputado_id.in.(${imputadoIds.join(",")})`)
     }
 
     let recursosData: Recurso[] = []
-
-    // Get hecho-level recursos
-    if (hechoData?.id) {
-      const { data: hechoRecursos } = await supabase.from("recursos").select("*").eq("hecho_id", hechoData.id)
-      recursosData = [...recursosData, ...(hechoRecursos || [])]
+    if (recursosFilters.length) {
+      const { data: recursos } = await supabase
+        .from("recursos")
+        .select("*")
+        .or(recursosFilters.join(","))
+      recursosData = recursos || []
     }
 
-    // Get victim-specific recursos
-    if (victimaData?.id) {
-      const { data: victimRecursos } = await supabase.from("recursos").select("*").eq("victima_id", victimaData.id)
-      recursosData = [...recursosData, ...(victimRecursos || [])]
-    }
-
-    // Get imputado-specific recursos
-    for (const imp of imputadosData) {
-      const { data: impRecursos } = await supabase.from("recursos").select("*").eq("imputado_id", imp.id)
-      recursosData = [...recursosData, ...(impRecursos || [])]
-    }
-
-    // Remove duplicates by id
-    const uniqueRecursos = recursosData.filter((r, index, self) => index === self.findIndex((t) => t.id === r.id))
-
-    // Get hermanos de hecho
-    let hermanosHecho: HermanoHecho[] = []
-    if (hechoData?.id) {
-      const { data: otrosCasosArray } = await supabase
-        .from("casos")
-        .select("id, victima_id, victimas(nombre_completo)")
-        .eq("hecho_id", hechoData.id)
-        .neq("victima_id", victimaData?.id)
-
-      hermanosHecho =
-        (otrosCasosArray || []).map((c: any) => ({
-          caso_id: c.id,
-          victima_id: c.victima_id,
-          victima_nombre: c.victimas?.nombre_completo || "Sin nombre",
-        })) || []
-    }
+    // Dedup por id (un recurso puede matchear más de un filtro).
+    const uniqueRecursos = recursosData.filter(
+      (r, index, self) => index === self.findIndex((t) => t.id === r.id),
+    )
 
     setCaseData({
       caso_id: casoId,
@@ -539,6 +544,9 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
       setIsDeleting(true)
       const { error } = await supabase.from("casos").delete().eq("id", caseId)
       if (error) throw error
+      // Listados y dashboard quedaron stale tras el delete.
+      queryClient.invalidateQueries({ queryKey: queryKeys.casesList })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats })
       router.push("/casos")
     } catch (err) {
       console.error("Error deleting case:", err)

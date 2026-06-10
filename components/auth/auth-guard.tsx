@@ -2,119 +2,41 @@
 
 import type React from "react"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
-import { Loader2 } from "lucide-react"
-
-const DEV_BYPASS_AUTH = false
 
 interface AuthGuardProps {
   children: React.ReactNode
 }
 
+/**
+ * Sólo escucha el evento `SIGNED_OUT` para redirigir al login cuando
+ * la sesión se cierra en otra pestaña o expira.
+ *
+ * El chequeo de sesión + whitelist se hace en `lib/supabase/middleware.ts`
+ * antes de que la página se sirva al cliente. Por eso este componente
+ * ya no monta un spinner bloqueante de "Verificando acceso" en el
+ * primer render.
+ */
 export function AuthGuard({ children }: AuthGuardProps) {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
   const pathname = usePathname()
   const router = useRouter()
-  const hasRedirectedRef = useRef(false)
-  const supabase = createClient()
 
   useEffect(() => {
-    if (DEV_BYPASS_AUTH) {
-      console.log("[v0] Modo DEV activo - Bypass de autenticación habilitado")
-      setIsAuthenticated(true)
-      return
-    }
-
-    let isMounted = true
-
-    const checkAuth = async () => {
-      try {
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession()
-
-        if (!isMounted) return
-
-        const isAuth = !!session && !error
-        setIsAuthenticated(isAuth)
-
-        // Si no está autenticado y no está en login, redirigir a login
-        if (!isAuth && pathname !== "/login") {
-          hasRedirectedRef.current = true
-          router.replace("/login")
-          return
-        }
-
-        // Si está autenticado y está en login, redirigir a la página principal
-        if (isAuth && pathname === "/login") {
-          hasRedirectedRef.current = true
-          router.replace("/")
-          return
-        }
-      } catch (err) {
-        if (isMounted) {
-          setIsAuthenticated(false)
-          if (pathname !== "/login") {
-            hasRedirectedRef.current = true
-            router.replace("/login")
-          }
-        }
-      }
-    }
-
+    const supabase = createClient()
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!isMounted || hasRedirectedRef.current) return
-
-      const isAuth = !!session
-      setIsAuthenticated(isAuth)
-
+    } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_OUT" && pathname !== "/login") {
-        hasRedirectedRef.current = true
         router.replace("/login")
       }
     })
 
-    checkAuth()
-
     return () => {
-      isMounted = false
       subscription.unsubscribe()
     }
-  }, [supabase, pathname, router])
+  }, [pathname, router])
 
-  if (isAuthenticated === null) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-slate-600">Verificando acceso...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Si está en la página de login, siempre mostrar
-  if (pathname === "/login") {
-    return <>{children}</>
-  }
-
-  // Si está autenticado, mostrar contenido protegido
-  if (isAuthenticated) {
-    return <>{children}</>
-  }
-
-  // Si no está autenticado, mostrar loading mientras redirige
-  return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-      <div className="text-center">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
-        <p className="text-slate-600">Redirigiendo al login...</p>
-      </div>
-    </div>
-  )
+  return <>{children}</>
 }

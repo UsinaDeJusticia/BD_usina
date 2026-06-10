@@ -4,6 +4,7 @@ import { Lato, Montserrat } from "next/font/google"
 import "./globals.css"
 import { AuthGuard } from "@/components/auth/auth-guard"
 import { SupabaseListener } from "@/components/auth/supabase-listener"
+import { QueryProvider } from "@/components/providers/query-provider"
 
 const lato = Lato({
   subsets: ["latin"],
@@ -33,8 +34,10 @@ export default function RootLayout({
   return (
     <html lang="es" className={`${lato.variable} ${montserrat.variable}`}>
       <body className="font-sans antialiased bg-slate-50 text-slate-900">
-        <SupabaseListener />
-        <AuthGuard>{children}</AuthGuard>
+        <QueryProvider>
+          <SupabaseListener />
+          <AuthGuard>{children}</AuthGuard>
+        </QueryProvider>
       </body>
     </html>
   )

@@ -5,21 +5,10 @@ import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { MapPin, User, Loader2, Users } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
+import { type CaseListItem } from "@/lib/data/casos"
+import { useCasesList } from "@/lib/queries/casos"
 
-interface CaseData {
-  id: string
-  victimName: string
-  incidentDate: string
-  location: string
-  province: string
-  status: string
-  familyContactName: string
-  familyRelationship: string
-  familyContactPhone: string
-  hechoId: string
-  totalVictimsInHecho: number
-}
+type CaseData = CaseListItem
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -51,9 +40,12 @@ interface CaseCardProps {
 }
 
 function CaseCard({ case: caseData }: CaseCardProps) {
+  // `content-visibility: auto` + `contain-intrinsic-size` evitan
+  // pintar y layoutear las cards que están fuera del viewport mientras
+  // el marquee las arrastra (la mayoría del tiempo).
   return (
     <Link href={`/casos/${caseData.id}`}>
-      <Card className="w-80 flex-shrink-0 hover:shadow-lg transition-all duration-300 border-slate-200 hover:border-blue-300 cursor-pointer hover:scale-105">
+      <Card className="w-80 flex-shrink-0 hover:shadow-lg transition-all duration-300 border-slate-200 hover:border-blue-300 cursor-pointer hover:scale-105 [content-visibility:auto] [contain-intrinsic-size:auto_220px]">
         <CardContent className="p-6">
           <div className="space-y-4">
             <div>
@@ -66,7 +58,9 @@ function CaseCard({ case: caseData }: CaseCardProps) {
             <div className="space-y-2 text-sm text-slate-600">
               <div className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-blue-600" />
-                <span className="line-clamp-1">{caseData.location}</span>
+                <span className="line-clamp-1">
+                  {caseData.municipio !== "No especificado" ? caseData.municipio : caseData.provincia}
+                </span>
               </div>
 
               <div className="flex items-center gap-2">
@@ -113,6 +107,10 @@ function ScrollingRow({ cases, direction, speed }: ScrollingRowProps) {
         className={`flex gap-6 ${direction === "left" ? "animate-scroll-left" : "animate-scroll-right"}`}
         style={{
           animationDuration: `${speed}s`,
+          // Avisa al navegador que esta capa va a transformarse en cada
+          // frame para que la promueva a su propia compositor layer y
+          // evite repaints del layout principal.
+          willChange: "transform",
         }}
       >
         {duplicatedCases.map((caseData, index) => (
@@ -123,18 +121,18 @@ function ScrollingRow({ cases, direction, speed }: ScrollingRowProps) {
   )
 }
 
+// Vista animada de la home: vitrina, no listado completo. Limitamos a
+// los más recientes para no triplicar 200 cards en el DOM (3x = animación
+// de marquee). Con la query ordenada por created_at desc esto deja los
+// últimos 24 casos -> 6 filas de 4 -> ~72 nodos animados en el DOM.
+const VITRINA_MAX_CASES = 24
+
 export function AnimatedCasesGrid() {
-  const [cases, setCases] = useState<CaseData[]>([])
+  const { data: allCases = [], isLoading, error, refetch } = useCasesList()
   const [rows, setRows] = useState<CaseData[][]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const supabase = createClient()
 
   useEffect(() => {
-    fetchCases()
-  }, [])
-
-  useEffect(() => {
+    const cases = allCases.slice(0, VITRINA_MAX_CASES)
     if (cases.length > 0) {
       const chunkSize = 4
       const caseRows = []
@@ -143,115 +141,10 @@ export function AnimatedCasesGrid() {
       }
       setRows(caseRows)
     }
-  }, [cases])
+  }, [allCases])
 
-  const fetchCases = async () => {
-    try {
-      setIsLoading(true)
-      setError(null)
-
-      const { data: casosData, error: casosError } = await supabase
-        .from("casos")
-        .select(`
-          id,
-          estado_general,
-          estado,
-          hecho_id,
-          victima_id,
-          created_at,
-          victimas (
-            id,
-            nombre_completo
-          ),
-          hechos (
-            id,
-            fecha_hecho,
-            municipio,
-            provincia
-          )
-        `)
-        .order("created_at", { ascending: false })
-
-      if (casosError) throw casosError
-
-      const hechoVictimCounts: Record<string, number> = {}
-      for (const caso of casosData || []) {
-        if (caso.hecho_id) {
-          hechoVictimCounts[caso.hecho_id] = (hechoVictimCounts[caso.hecho_id] || 0) + 1
-        }
-      }
-
-      const transformedCases: CaseData[] = await Promise.all(
-        (casosData || []).map(async (caso: any) => {
-          const victima = caso.victimas || {}
-          const hecho = caso.hechos || {}
-
-          console.log(
-            `[v0] Caso ${victima.nombre_completo || "Sin nombre"} - estado: "${caso.estado}", estado_general: "${caso.estado_general}"`,
-          )
-
-          const { data: seguimientoData, error: segError } = await supabase
-            .from("seguimiento")
-            .select("lista_contactos_familiares")
-            .eq("hecho_id", caso.hecho_id)
-            .order("created_at", { ascending: true })
-            .limit(1)
-            .maybeSingle()
-
-          if (segError && segError.code !== "PGRST116") {
-            console.log("[v0] Error fetching seguimiento:", segError)
-          }
-
-          let familyContactName = "No especificado"
-          let familyRelationship = "Familiar"
-          let familyContactPhone = "No especificado"
-
-          if (seguimientoData?.lista_contactos_familiares) {
-            const contactos = seguimientoData.lista_contactos_familiares as any[]
-            if (contactos && contactos.length > 0) {
-              const primerContacto = contactos[0]
-              familyContactName = primerContacto.nombre || "No especificado"
-              familyRelationship = primerContacto.parentesco || "Familiar"
-              const telefono = primerContacto.telefono
-              familyContactPhone = telefono && telefono.trim() !== "" ? telefono : "No especificado"
-            }
-          }
-
-          const finalStatus =
-            caso.estado && caso.estado.trim() !== ""
-              ? caso.estado
-              : caso.estado_general && caso.estado_general.trim() !== ""
-                ? caso.estado_general
-                : "En investigación"
-
-          console.log(`[v0] Caso ${victima.nombre_completo || "Sin nombre"} - status final: "${finalStatus}"`)
-
-          return {
-            id: caso.id,
-            victimName: victima.nombre_completo || "Sin nombre",
-            incidentDate: hecho.fecha_hecho || new Date().toISOString(),
-            location: hecho.municipio || hecho.provincia || "No especificado",
-            province: hecho.provincia || "No especificado",
-            status: finalStatus,
-            familyContactName,
-            familyRelationship,
-            familyContactPhone,
-            hechoId: caso.hecho_id,
-            totalVictimsInHecho: caso.hecho_id ? hechoVictimCounts[caso.hecho_id] : 1,
-          }
-        }),
-      )
-
-      console.log("[v0] Transformed cases sample:", transformedCases.slice(0, 2))
-
-      setCases(transformedCases)
-    } catch (err) {
-      console.error("Error fetching cases:", err)
-      setError("Error al cargar los casos")
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  // Para chequeos de "no hay nada" usamos el dataset original (no la slice).
+  const cases = allCases
 
   if (isLoading) {
     return (
@@ -267,10 +160,10 @@ export function AnimatedCasesGrid() {
       <div className="text-center py-12">
         <h2 className="text-3xl font-bold text-slate-900 font-heading mb-4">Casos Recientes</h2>
         <p className="text-lg text-slate-600 max-w-2xl mx-auto mb-8">
-          {error || "No hay casos disponibles para mostrar"}
+          {error ? "Error al cargar los casos" : "No hay casos disponibles para mostrar"}
         </p>
         {error && (
-          <button onClick={fetchCases} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <button onClick={() => refetch()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             Reintentar
           </button>
         )}
