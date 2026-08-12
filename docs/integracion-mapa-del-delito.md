@@ -23,7 +23,7 @@ los dos lados.
 ## Arquitectura
 
 ```
-┌───────────────────────────┐               ┌───────────────────────┐
+┌──────────────────────────────┐               ┌─────────────────────────┐
 │         BD USINA             │               │    MAPA DEL DELITO      │
 │                              │               │                         │
 │ victimas/hechos (RLS:        │◄─ lee vista ──│ (server de MdD usa JWT  │
@@ -34,7 +34,7 @@ los dos lados.
 │ /candidatos (UI revisión)    │  JWT rol_usina│                         │
 │ revisiones_candidatos_log    │── UPDATE ────►│ (estado, usina_victima_ │
 │ pending_callbacks_mdd + cron │   decisión    │  id, motivo, decidido_*)│
-└───────────────────────────┘               └───────────────────────┘
+└──────────────────────────────┘               └─────────────────────────┘
 ```
 
 ## 1. Lectura: BD Usina → MdD

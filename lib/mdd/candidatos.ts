@@ -2,6 +2,9 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { getMddClient } from "@/lib/mdd/client"
 import type { DecidirCandidatoInput, PropuestaCandidata } from "@/lib/mdd/types"
 
+// Server-only por transitividad: importa lib/mdd/client.ts, que ya tiene
+// el guard de `typeof window`.
+
 export async function fetchCandidatosPendientes(): Promise<PropuestaCandidata[]> {
   const { data, error } = await getMddClient()
     .from("api_propuestas_publicas")
@@ -86,6 +89,8 @@ export async function encolarCallbackPendiente(
     ultimo_error: ultimoError,
   })
   if (error) {
+    // Si ni siquiera se puede encolar, no hay más red de contención que
+    // loguearlo — la decisión local ya está aplicada y auditada.
     console.error("No se pudo encolar el callback pendiente para MdD:", error.message)
   }
 }
