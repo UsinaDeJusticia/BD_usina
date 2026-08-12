@@ -157,7 +157,8 @@ ningún otro permiso sobre la tabla).
 
 Si el UPDATE a MdD falla (MdD caído, JWT vencido), la decisión queda
 igual aplicada en BD Usina y se encola en `pending_callbacks_mdd`. Un
-cron de Vercel (`/api/cron/retry-mdd-callbacks`, cada 5 min) reintenta.
+cron de Vercel (`/api/cron/retry-mdd-callbacks`, una vez al día — límite
+del plan Hobby) reintenta.
 
 ## Rotación de credenciales
 

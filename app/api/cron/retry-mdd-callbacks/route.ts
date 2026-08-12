@@ -7,7 +7,15 @@ const MAX_INTENTOS = 10
 /**
  * Reintenta los callbacks de decisión que fallaron contra Mapa del Delito
  * (ver app/api/candidatos/[id]/decidir/route.ts). Invocado por Vercel Cron
- * cada 5 minutos (ver vercel.json).
+ * una vez al día (ver vercel.json).
+ *
+ * Por qué diario y no cada pocos minutos: el plan Hobby de Vercel sólo
+ * permite crons con frecuencia diaria o menor. La decisión ya queda
+ * aplicada localmente en el momento (ficha creada, log escrito); este
+ * cron sólo resincroniza el estado en MdD cuando el UPDATE inmediato
+ * falló, así que un delay de hasta 24h en ese caso puntual es aceptable.
+ * Si en el futuro se sube a un plan con crons más frecuentes, basta con
+ * ajustar `schedule` en vercel.json — el código no cambia.
  *
  * Corre sin sesión de usuario -> usa el cliente de service role (bypassa
  * RLS) sólo para esta tabla puntual. Verificado con CRON_SECRET, patrón
