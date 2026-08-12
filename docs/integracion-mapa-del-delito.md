@@ -151,7 +151,7 @@ Cada decisión queda en `revisiones_candidatos_log` (BD Usina) y se
 refleja en `propuestas_para_usina.estado` (MdD) vía un UPDATE acotado
 (sólo columnas `estado`, `usina_victima_id`, `motivo_rechazo`,
 `decidido_at`, `decidido_por` — el rol `rol_usina_revisor` no tiene
-ingún otro permiso sobre la tabla).
+ningún otro permiso sobre la tabla).
 
 ### Resiliencia
 
