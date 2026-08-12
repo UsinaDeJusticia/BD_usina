@@ -3,13 +3,20 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { LogOut, BarChart3 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { LogOut, BarChart3, ListChecks } from "lucide-react"
 import Image from "next/image"
 import { createClient } from "@/lib/supabase/client"
+import { useCandidatosPendientes } from "@/lib/queries/candidatos"
 
 export function Header() {
   const pathname = usePathname()
   const supabase = createClient()
+  // Cuenta de candidatos de Mapa del Delito pendientes de revisión. Se
+  // sirve del mismo cache de TanStack Query que usa /candidatos —
+  // ambos comparten queryKeys.candidatosPendientes.
+  const { data: candidatos } = useCandidatosPendientes()
+  const pendientesCount = candidatos?.length ?? 0
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -52,6 +59,22 @@ export function Header() {
               >
                 <BarChart3 className="w-4 h-4" />
                 Dashboard
+              </Link>
+              <Link
+                href="/candidatos"
+                className={`px-3 py-2 text-sm font-medium rounded-md transition-colors flex items-center gap-2 ${
+                  pathname === "/candidatos"
+                    ? "bg-blue-50 text-blue-900 border border-blue-200"
+                    : "text-slate-600 hover:text-blue-700 hover:bg-blue-50"
+                }`}
+              >
+                <ListChecks className="w-4 h-4" />
+                Candidatos
+                {pendientesCount > 0 && (
+                  <Badge className="bg-blue-600 hover:bg-blue-600 text-white h-5 min-w-5 px-1.5 justify-center">
+                    {pendientesCount}
+                  </Badge>
+                )}
               </Link>
             </nav>
           </div>
