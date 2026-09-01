@@ -1,6 +1,6 @@
 // supabase/functions/check-anniversaries/index.ts
 //
-// Notifica por email a info@usinadejusticia.org.ar y Pborras58@gmail.com
+// Notifica por email a info@usinadejusticia.org.ar y ejairsud@gmail.com
 // las víctimas cuyo cumpleaños o aniversario de fallecimiento cae al día
 // siguiente (preaviso de 24h, para preparar contenido conmemorativo).
 //
@@ -162,7 +162,7 @@ Deno.serve(async (req) => {
     // 4. Enviar
     const { data: emailData, error: emailError } = await resend.emails.send({
       from: "Usina de Justicia <no-reply@usinadejusticia.org.ar>",
-      to: ["info@usinadejusticia.org.ar", "Pborras58@gmail.com"],
+      to: ["info@usinadejusticia.org.ar", "ejairsud@gmail.com"],
       subject: `🕯️ Mañana recordamos - ${tomorrowShort}`,
       html: htmlContent,
     });
