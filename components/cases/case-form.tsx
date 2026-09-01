@@ -21,6 +21,14 @@ import { queryKeys } from "@/lib/queries/keys"
 interface CaseFormProps {
   mode: "create" | "edit"
   caseId?: string
+  /**
+   * Id de una propuesta de Mapa del Delito (`propuestas_para_usina`).
+   * Cuando está presente en modo "create", el form se pre-rellena con los
+   * datos del candidato (incluidas sus fuentes como recursos) y, al
+   * guardar con éxito, se notifica la decisión "aprobada" de vuelta a
+   * MdD vía /api/candidatos/[id]/decidir. Ver lib/mdd/candidatos.ts.
+   */
+  fromCandidatoId?: string
 }
 
 const getEmptyVictimData = () => ({
@@ -40,7 +48,7 @@ const getEmptyVictimData = () => ({
   resources: [],
 })
 
-export function CaseForm({ mode, caseId }: CaseFormProps) {
+export function CaseForm({ mode, caseId, fromCandidatoId }: CaseFormProps) {
   const router = useRouter()
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -79,6 +87,81 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
     hechoId: null,
     casoId: null,
   })
+
+  // Pre-fill desde una propuesta de Mapa del Delito (ver
+  // app/casos/nuevo/page.tsx?fromCandidato=<id>). Sólo aplica en modo
+  // create; en edit no tiene sentido.
+  useEffect(() => {
+    if (mode !== "create" || !fromCandidatoId) return
+
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/candidatos/${fromCandidatoId}`)
+        const body = await res.json()
+        if (!res.ok) throw new Error(body?.error || "No se pudo cargar el candidato")
+        if (cancelled) return
+
+        const candidato = body.data
+        // Alias/género no tienen columna propia en `victimas` (ver
+        // docs/integracion-mapa-del-delito.md, mapeo candidato→ficha):
+        // se anteponen como texto a las notas.
+        const notasExtra = [
+          candidato.alias ? `Alias: ${candidato.alias}` : null,
+          candidato.genero ? `Género (dato del scraper): ${candidato.genero}` : null,
+        ]
+          .filter(Boolean)
+          .join(" — ")
+
+        const recursosDeFuentes = (candidato.fuentes || []).map((f: any) => ({
+          tipo: "noticia",
+          titulo: f.titulo || f.url,
+          url: f.url,
+          fuente: f.fuente_medio || "",
+          descripcion: "",
+          input_mode: "url",
+        }))
+
+        setFormData((prev) => ({
+          ...prev,
+          victims: [
+            {
+              ...prev.victims[0],
+              nombreCompleto: candidato.nombre_completo || "",
+              fechaNacimiento: candidato.fecha_nacimiento || "",
+              edad: candidato.edad_aproximada?.toString() || "",
+              nacionalidad: candidato.nacionalidad || "",
+              notasAdicionales: notasExtra || prev.victims[0].notasAdicionales,
+              fechaHecho: candidato.fecha_hecho || "",
+              fechaFallecimiento: candidato.fecha_fallecimiento || "",
+            },
+          ],
+          incident: {
+            ...prev.incident,
+            provincia: candidato.provincia || "",
+            municipio: candidato.municipio || "",
+            resumenHecho: candidato.resumen_corto || "",
+            tipoCrimen: candidato.tipo_crimen || "",
+            tipoLugar: candidato.tipo_lugar || "",
+          },
+          resources: recursosDeFuentes,
+        }))
+      } catch (err) {
+        console.error("Error precargando candidato de MdD:", err)
+        toast({
+          title: "No se pudo precargar el candidato",
+          description: err instanceof Error ? err.message : "Error desconocido",
+          variant: "destructive",
+        })
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, fromCandidatoId])
 
   useEffect(() => {
     if (mode === "edit" && caseId) {
@@ -501,6 +584,11 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
   const handleSave = async () => {
     const supabase = createClient()
     setIsSaving(true)
+
+    // Capturado en CREATE MODE para el callback a Mapa del Delito, leído
+    // después de que el if/else de guardado termina (ver más abajo, junto
+    // al toast de éxito).
+    let firstVictimaId: string | null = null
 
     try {
       if (mode === "edit" && caseId) {
@@ -1030,6 +1118,7 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
           // Update hecho with the first victim's ID
           if (i === 0) {
             await supabase.from("hechos").update({ victima_id: victimData.id }).eq("id", hechoId)
+            firstVictimaId = victimData.id
           }
 
           // Insert victim resources
@@ -1198,6 +1287,22 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
       // Listados y dashboard quedaron stale tras el insert/update.
       queryClient.invalidateQueries({ queryKey: queryKeys.casesList })
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats })
+
+      // Si la ficha vino de una propuesta de Mapa del Delito, cerrar el
+      // loop: notificar "aprobada" con el id real de la víctima creada.
+      // No bloquea la navegación si falla — /api/candidatos/[id]/decidir
+      // ya maneja su propio fallback (pending_callbacks_mdd + cron), y acá
+      // sólo puede fallar por un problema de red hacia nuestro propio
+      // dominio, algo raro y no bloqueante para el usuario.
+      if (fromCandidatoId && firstVictimaId) {
+        fetch(`/api/candidatos/${fromCandidatoId}/decidir`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision: "aprobada", usina_victima_id: firstVictimaId }),
+        }).catch((err) => {
+          console.error("Error notificando aprobación a Mapa del Delito:", err)
+        })
+      }
 
       router.push("/casos")
     } catch (error: any) {
