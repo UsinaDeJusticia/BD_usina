@@ -6,7 +6,9 @@
 -- El formulario de casos guarda el código 'condenado' (ver
 -- ESTADO_PROCESAL_OPTIONS en components/cases/forms/accused-form.tsx), así que
 -- la comparación anterior contaba a los condenados como "sin condena".
--- Se usa lower() para que también cuente los registros viejos con la etiqueta.
+-- Se usa lower() para que también cuente los registros viejos con la etiqueta,
+-- y se incluye 'convicted', el código en inglés que guardaba el formulario
+-- antes del commit b8e7b34.
 --
 -- Pendiente de decisión (no cambiado aquí): "En Investigación" compara contra
 -- 'En investigación', valor que ningún formulario escribe. Hay que definir qué
@@ -28,7 +30,7 @@ as $$
       (select count(*) from public.victimas
          where created_at >= now() - interval '1 year') as cases_last_year,
       (select count(*) from public.imputados
-         where coalesce(lower(estado_procesal), '') <> 'condenado') as cases_without_conviction,
+         where coalesce(lower(estado_procesal), '') not in ('condenado', 'convicted')) as cases_without_conviction,
       (select count(*) from public.imputados
          where estado_procesal = 'En investigación') as cases_in_investigation
   ),

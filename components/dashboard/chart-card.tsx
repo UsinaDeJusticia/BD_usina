@@ -11,12 +11,21 @@ interface ChartCardProps {
   status: ChartCardStatus
   emptyMessage: string
   onRetry: () => void
+  retrying: boolean
   children: ReactNode
 }
 
 // Muestra el gráfico sólo cuando hay datos. Loading, error y vacío tienen su
 // propio mensaje, para que un fallo de la consulta no se vea como "sin casos".
-export function ChartCard({ title, description, status, emptyMessage, onRetry, children }: ChartCardProps) {
+export function ChartCard({
+  title,
+  description,
+  status,
+  emptyMessage,
+  onRetry,
+  retrying,
+  children,
+}: ChartCardProps) {
   return (
     <Card className="border-slate-200">
       <CardHeader>
@@ -40,9 +49,10 @@ export function ChartCard({ title, description, status, emptyMessage, onRetry, c
             <p className="text-slate-600">No se pudieron cargar los datos</p>
             <button
               onClick={onRetry}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+              disabled={retrying}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-wait text-sm"
             >
-              Reintentar
+              {retrying ? "Reintentando..." : "Reintentar"}
             </button>
           </div>
         )}

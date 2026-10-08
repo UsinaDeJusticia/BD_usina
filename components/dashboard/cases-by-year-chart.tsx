@@ -10,6 +10,10 @@ import { ChartCard, type ChartCardStatus } from "@/components/dashboard/chart-ca
 import type { YearlyData } from "@/lib/data/dashboard"
 import { useDashboardStats } from "@/lib/queries/dashboard"
 
+// Tope de años que se rellenan. Un año mal cargado (p. ej. 1026, el campo de
+// fecha no tiene límites) no debe generar miles de barras.
+const MAX_GAP_FILL_YEARS = 50
+
 // La RPC sólo devuelve los años con casos. Se completan los años vacíos con 0
 // para que el eje temporal sea continuo y cada barra quede en su año real.
 function fillYearGaps(rows: YearlyData[]): YearlyData[] {
@@ -18,6 +22,7 @@ function fillYearGaps(rows: YearlyData[]): YearlyData[] {
   const years = [...byYear.keys()]
   const first = Math.min(...years)
   const last = Math.max(...years)
+  if (last - first + 1 > MAX_GAP_FILL_YEARS) return rows
   const filled: YearlyData[] = []
   for (let year = first; year <= last; year++) {
     filled.push({ year: String(year), cases: byYear.get(year) ?? 0 })
@@ -26,7 +31,7 @@ function fillYearGaps(rows: YearlyData[]): YearlyData[] {
 }
 
 export function CasesByYearChart() {
-  const { data: stats, isLoading, error, refetch } = useDashboardStats()
+  const { data: stats, isLoading, isFetching, error, refetch } = useDashboardStats()
   const data = useMemo(() => fillYearGaps(stats?.casesByYear ?? []), [stats])
 
   const definition = useMemo(
@@ -50,9 +55,11 @@ export function CasesByYearChart() {
     [data],
   )
 
+  // Un refetch fallido no oculta datos que ya están en caché: sólo hay error si
+  // todavía no hay datos.
   const status: ChartCardStatus = isLoading
     ? "loading"
-    : error
+    : error && !stats
       ? "error"
       : data.length === 0
         ? "empty"
@@ -67,6 +74,7 @@ export function CasesByYearChart() {
       status={status}
       emptyMessage="No hay casos registrados aún"
       onRetry={() => refetch()}
+      retrying={isFetching}
     >
       <div className="dashboard-chart">
         <Chart

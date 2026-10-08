@@ -93,7 +93,8 @@ export function ArgentinaMap() {
     )
   }
 
-  if (error) {
+  // Igual que los gráficos: un refetch fallido no oculta datos ya cargados.
+  if (error && !stats) {
     return (
       <Card className="border-slate-200">
         <CardHeader>

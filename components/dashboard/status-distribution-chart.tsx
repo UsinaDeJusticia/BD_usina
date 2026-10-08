@@ -34,7 +34,7 @@ function colorFor(label: string): string {
 }
 
 export function StatusDistributionChart() {
-  const { data: stats, isLoading, error, refetch } = useDashboardStats()
+  const { data: stats, isLoading, isFetching, error, refetch } = useDashboardStats()
 
   // Varias filas pueden caer en el mismo estado canónico (p. ej. "condenado" y
   // "Condenado"), así que se suman antes de graficar.
@@ -86,9 +86,10 @@ export function StatusDistributionChart() {
     [slices, colorDomain, colorRange],
   )
 
+  // Un refetch fallido no oculta datos que ya están en caché (ver cases-by-year-chart).
   const status: ChartCardStatus = isLoading
     ? "loading"
-    : error
+    : error && !stats
       ? "error"
       : slices.length === 0
         ? "empty"
@@ -103,6 +104,7 @@ export function StatusDistributionChart() {
       status={status}
       emptyMessage="No hay casos con estado procesal registrados aún"
       onRetry={() => refetch()}
+      retrying={isFetching}
     >
       <div className="dashboard-chart">
         <Chart

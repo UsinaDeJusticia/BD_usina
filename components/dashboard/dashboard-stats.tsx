@@ -22,7 +22,8 @@ export function DashboardStats() {
     )
   }
 
-  if (error || !stats) {
+  // Un refetch fallido no oculta las cifras ya cargadas: el error sólo se muestra sin datos.
+  if (!stats) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <Card className="border-slate-200 col-span-full">
