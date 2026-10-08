@@ -1,134 +1,135 @@
 "use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts"
 import { useMemo } from "react"
+import { defineChart } from "@tanstack/charts"
+import { pie, polar, radialArc } from "@tanstack/charts/polar"
+import { Chart } from "@tanstack/charts/react"
+import { tooltip } from "@tanstack/charts/tooltip"
+import { ChartCard, type ChartCardStatus } from "@/components/dashboard/chart-card"
+import {
+  ESTADO_PROCESAL,
+  SIN_ESTADO,
+  canonicalEstado,
+  estadoLabel,
+} from "@/lib/data/estado-procesal"
 import { useDashboardStats } from "@/lib/queries/dashboard"
 
-interface StatusData {
+interface StatusSlice {
   status: string
+  label: string
   cases: number
-  fill: string
 }
 
-const chartConfig = {
-  cases: {
-    label: "Casos",
-  },
-  "En investigación": {
-    label: "En investigación",
-    color: "hsl(var(--chart-1))",
-  },
-  "Imputado identificado": {
-    label: "Imputado identificado",
-    color: "hsl(var(--chart-2))",
-  },
-  Procesado: {
-    label: "Procesado",
-    color: "hsl(var(--chart-3))",
-  },
-  "Juicio oral": {
-    label: "Juicio oral",
-    color: "hsl(var(--chart-4))",
-  },
-  Condenado: {
-    label: "Condenado",
-    color: "hsl(var(--chart-5))",
-  },
-  Prescripción: {
-    label: "Prescripción",
-    color: "hsl(var(--chart-6))",
-  },
-  Otros: {
-    label: "Otros",
-    color: "hsl(var(--muted))",
-  },
-}
+// Un token de tema por estado, en el orden de ESTADO_PROCESAL. Los tokens
+// --ts-chart-N se definen en .dashboard-chart (app/globals.css).
+const STATUS_COLORS = new Map<string, string>(
+  ESTADO_PROCESAL.map((estado, index) => [estado.code, `var(--ts-chart-${index + 1})`]),
+)
+const UNKNOWN_STATUS_COLOR = "var(--muted-foreground)"
 
-const statusColors: { [key: string]: string } = {
-  "En investigación": "hsl(var(--chart-1))",
-  "Imputado identificado": "hsl(var(--chart-2))",
-  Procesado: "hsl(var(--chart-3))",
-  "Juicio oral": "hsl(var(--chart-4))",
-  Condenado: "hsl(var(--chart-5))",
-  Prescripción: "hsl(var(--chart-6))",
-  Otros: "hsl(var(--muted))",
+// Recibe una etiqueta o un código y devuelve su color. Los desconocidos y el
+// "Sin estado" usan el color neutro.
+function colorFor(label: string): string {
+  return STATUS_COLORS.get(canonicalEstado(label)) ?? UNKNOWN_STATUS_COLOR
 }
 
 export function StatusDistributionChart() {
-  const { data: stats, isLoading: loading } = useDashboardStats()
-  const data = useMemo<StatusData[]>(
+  const { data: stats, isLoading, error, refetch } = useDashboardStats()
+
+  // Varias filas pueden caer en el mismo estado canónico (p. ej. "condenado" y
+  // "Condenado"), así que se suman antes de graficar.
+  const slices = useMemo<StatusSlice[]>(() => {
+    const totals = new Map<string, number>()
+    for (const row of stats?.casesByStatus ?? []) {
+      const key = canonicalEstado(row.status)
+      totals.set(key, (totals.get(key) ?? 0) + row.cases)
+    }
+    return [...totals.entries()]
+      .map(([status, cases]) => ({ status, label: estadoLabel(status), cases }))
+      .filter((slice) => slice.cases > 0)
+      .sort((a, b) => b.cases - a.cases)
+  }, [stats])
+
+  // Dominio fijo: el color de cada estado no cambia aunque cambie el orden de
+  // los datos. Los estados fuera de la lista se agregan al final.
+  const colorDomain = useMemo(() => {
+    const known = [...ESTADO_PROCESAL.map((estado) => estado.label), estadoLabel(SIN_ESTADO)]
+    const unknown = slices.map((slice) => slice.label).filter((label) => !known.includes(label))
+    return [...known, ...unknown]
+  }, [slices])
+  const colorRange = useMemo(() => colorDomain.map(colorFor), [colorDomain])
+
+  const total = slices.reduce((sum, slice) => sum + slice.cases, 0)
+
+  const definition = useMemo(
     () =>
-      (stats?.casesByStatus ?? []).map((s) => ({
-        status: s.status,
-        cases: s.cases,
-        fill: statusColors[s.status] || statusColors["Otros"],
-      })),
-    [stats],
+      defineChart({
+        marks: [
+          polar({
+            inset: 8,
+            radiusRatio: 0.9,
+            marks: [
+              radialArc(pie(slices, { value: "cases" }), {
+                innerRadius: ({ radius }) => radius * 0.58,
+                cornerRadius: 3,
+                color: "label",
+                key: "status",
+              }),
+            ],
+            scales: { angle: null, radius: null },
+          }),
+        ],
+        scales: { x: null, y: null },
+        color: { domain: colorDomain, range: colorRange },
+        tooltip,
+      }),
+    [slices, colorDomain, colorRange],
   )
 
-  if (loading) {
-    return (
-      <Card className="border-slate-200">
-        <CardHeader>
-          <CardTitle className="font-heading">Distribución por Estado Procesal</CardTitle>
-          <CardDescription>Casos según su estado en el proceso judicial</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center h-[300px]">
-            <p className="text-slate-500">Cargando datos...</p>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
+  const status: ChartCardStatus = isLoading
+    ? "loading"
+    : error
+      ? "error"
+      : slices.length === 0
+        ? "empty"
+        : "ready"
 
-  if (data.length === 0) {
-    return (
-      <Card className="border-slate-200">
-        <CardHeader>
-          <CardTitle className="font-heading">Distribución por Estado Procesal</CardTitle>
-          <CardDescription>Casos según su estado en el proceso judicial</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center h-[300px]">
-            <p className="text-slate-500">No hay casos con estado procesal registrados aún</p>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
+  const summary = slices.map((slice) => `${slice.label}: ${slice.cases}`).join(", ")
 
   return (
-    <Card className="border-slate-200">
-      <CardHeader>
-        <CardTitle className="font-heading">Distribución por Estado Procesal</CardTitle>
-        <CardDescription>Casos según su estado en el proceso judicial</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ChartContainer config={chartConfig}>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-              <Pie data={data} dataKey="cases" nameKey="status" cx="50%" cy="50%" outerRadius={100} innerRadius={40}>
-                {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.fill} />
-                ))}
-              </Pie>
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartContainer>
-        <div className="grid grid-cols-2 gap-2 mt-4">
-          {data.map((item) => (
-            <div key={item.status} className="flex items-center gap-2 text-sm">
-              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.fill }} />
-              <span className="text-slate-600 truncate">{item.status}</span>
-              <span className="font-medium text-slate-900 ml-auto">{item.cases}</span>
-            </div>
+    <ChartCard
+      title="Distribución por Estado Procesal"
+      description="Casos según su estado en el proceso judicial"
+      status={status}
+      emptyMessage="No hay casos con estado procesal registrados aún"
+      onRetry={() => refetch()}
+    >
+      <div className="dashboard-chart">
+        <Chart
+          definition={definition}
+          height={300}
+          ariaLabel="Distribución de casos por estado procesal"
+          ariaDescription={`Casos por estado procesal. ${summary}`}
+        />
+        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4" aria-label="Leyenda">
+          {slices.map((slice) => (
+            <li key={slice.status} className="flex items-center gap-2 text-sm min-w-0">
+              <span
+                aria-hidden="true"
+                className="w-3 h-3 rounded-full shrink-0"
+                style={{ backgroundColor: colorFor(slice.label) }}
+              />
+              <span className="text-slate-600 truncate min-w-0">{slice.label}</span>
+              <span className="font-medium text-slate-900 ml-auto tabular-nums whitespace-nowrap">
+                {slice.cases}
+                <span className="text-slate-500 font-normal">
+                  {" "}({((slice.cases / total) * 100).toFixed(1)}%)
+                </span>
+              </span>
+            </li>
           ))}
-        </div>
-      </CardContent>
-    </Card>
+        </ul>
+      </div>
+    </ChartCard>
   )
 }

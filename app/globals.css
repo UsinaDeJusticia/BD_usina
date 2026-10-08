@@ -30,6 +30,8 @@
   --chart-4: oklch(0.7 0.1 180); /* Light blue-gray */
   --chart-5: oklch(0.6 0.06 160); /* Muted blue-green */
   --chart-6: oklch(0.5 0.1 300); /* Purple accent for additional categories */
+  --chart-7: oklch(0.6 0.13 40); /* Warm ochre for the eighth procedural status */
+  --chart-8: oklch(0.55 0.02 260); /* Neutral slate for the last category */
   --radius: 0.625rem;
   --sidebar: oklch(1 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
@@ -75,6 +77,8 @@
   --chart-4: oklch(0.8 0.14 180); /* Bright blue-gray */
   --chart-5: oklch(0.75 0.1 160); /* Lighter blue-green */
   --chart-6: oklch(0.7 0.15 300); /* Lighter purple for dark mode */
+  --chart-7: oklch(0.72 0.13 40); /* Lighter ochre for dark mode */
+  --chart-8: oklch(0.75 0.02 260); /* Lighter slate for dark mode */
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -112,6 +116,8 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
   --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+  --color-chart-8: var(--chart-8);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -210,6 +216,19 @@
 .scrolling-container::after {
   right: 0;
   background: linear-gradient(to left, rgb(248 250 252), transparent);
+}
+
+/* TanStack Charts reads its categorical palette from --ts-chart-N. Point those
+   tokens at the theme's --chart-N variables so light and dark mode both apply. */
+.dashboard-chart {
+  --ts-chart-1: var(--chart-1);
+  --ts-chart-2: var(--chart-2);
+  --ts-chart-3: var(--chart-3);
+  --ts-chart-4: var(--chart-4);
+  --ts-chart-5: var(--chart-5);
+  --ts-chart-6: var(--chart-6);
+  --ts-chart-7: var(--chart-7);
+  --ts-chart-8: var(--chart-8);
 }
 
 /* Responsive adjustments for different screen sizes */

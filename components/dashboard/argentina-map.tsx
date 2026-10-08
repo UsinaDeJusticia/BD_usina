@@ -40,34 +40,41 @@ const provinceCoordinates: Record<string, { x: number; y: number }> = {
   "San Juan": { x: 38, y: 58 },
 }
 
-const getPointSize = (cases: number) => {
-  if (cases > 200) return "w-4 h-4"
-  if (cases > 100) return "w-3 h-3"
-  if (cases > 50) return "w-2 h-2"
-  return "w-1.5 h-1.5"
+// Nombres que llegan de Georef o del formulario y no coinciden con las claves de provinceCoordinates.
+const PROVINCE_ALIASES: Record<string, string> = {
+  "Ciudad Autónoma de Buenos Aires": "CABA",
+  "Tierra del Fuego, Antártida e Islas del Atlántico Sur": "Tierra del Fuego",
 }
 
+// Los puntos son SVG y su color sale de fill="currentColor", así que la clase
+// tiene que ser text-*: background-color no pinta formas SVG.
 const getPointColor = (cases: number) => {
-  /* Updated map point colors to match new brand palette */
-  if (cases > 200) return "bg-red-600"
-  if (cases > 100) return "bg-orange-500"
-  if (cases > 50) return "bg-blue-500"
-  return "bg-blue-300"
+  if (cases > 200) return "text-red-600"
+  if (cases > 100) return "text-orange-500"
+  if (cases > 50) return "text-blue-500"
+  return "text-blue-300"
 }
 
 export function ArgentinaMap() {
   const { data: stats, isLoading, error, refetch } = useDashboardStats()
-  // La RPC ya devuelve los agregados ordenados por casos desc; sólo
-  // adjuntamos las coordenadas hardcoded de cada provincia.
-  const caseLocations = useMemo<ProvinceData[]>(
-    () =>
-      (stats?.casesByProvince ?? []).map((p) => ({
-        province: p.provincia,
-        cases: p.cases,
-        coordinates: provinceCoordinates[p.provincia] || { x: 50, y: 50 },
-      })),
-    [stats],
-  )
+  // Une nombres equivalentes (CABA llega con dos nombres) y separa las
+  // provincias sin coordenadas: no se dibujan en un punto inventado.
+  const { caseLocations, unmappedCases } = useMemo(() => {
+    const byProvince = new Map<string, number>()
+    for (const row of stats?.casesByProvince ?? []) {
+      const name = PROVINCE_ALIASES[row.provincia] ?? row.provincia
+      byProvince.set(name, (byProvince.get(name) ?? 0) + row.cases)
+    }
+    const locations: ProvinceData[] = []
+    let unmapped = 0
+    for (const [province, cases] of byProvince) {
+      const coordinates = provinceCoordinates[province]
+      if (coordinates) locations.push({ province, cases, coordinates })
+      else unmapped += cases
+    }
+    locations.sort((a, b) => b.cases - a.cases)
+    return { caseLocations: locations, unmappedCases: unmapped }
+  }, [stats])
 
   if (isLoading) {
     return (
@@ -108,7 +115,7 @@ export function ArgentinaMap() {
     )
   }
 
-  const totalCases = caseLocations.reduce((sum, loc) => sum + loc.cases, 0)
+  const totalCases = caseLocations.reduce((sum, loc) => sum + loc.cases, 0) + unmappedCases
 
   return (
     <Card className="border-slate-200">
@@ -120,11 +127,13 @@ export function ArgentinaMap() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Map Visualization */}
           <div className="lg:col-span-2">
-            <div className="relative bg-slate-100 rounded-lg p-8 h-96 overflow-hidden">
+            <div className="relative bg-slate-100 rounded-lg p-4 sm:p-8 h-80 sm:h-96 overflow-hidden">
               {/* Simplified Argentina outline */}
               <svg
                 viewBox="0 0 100 100"
                 className="w-full h-full"
+                role="img"
+                aria-label="Mapa de casos por provincia"
                 style={{ filter: "drop-shadow(0 1px 2px rgb(0 0 0 / 0.1))" }}
               >
                 {/* Argentina silhouette - simplified path */}
@@ -138,6 +147,7 @@ export function ArgentinaMap() {
                 {/* Case location points */}
                 {caseLocations.map((location) => (
                   <g key={location.province}>
+                    <title>{`${location.province}: ${location.cases} casos`}</title>
                     <circle
                       cx={location.coordinates.x}
                       cy={location.coordinates.y}
@@ -201,12 +211,18 @@ export function ArgentinaMap() {
               <div className="space-y-1 text-xs text-slate-600">
                 <div className="flex justify-between">
                   <span>Total provincias:</span>
-                  <span className="font-medium">24</span>
+                  <span className="font-medium">{Object.keys(provinceCoordinates).length}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Con casos registrados:</span>
                   <span className="font-medium">{caseLocations.length}</span>
                 </div>
+                {unmappedCases > 0 && (
+                  <div className="flex justify-between">
+                    <span>Casos sin ubicar en el mapa:</span>
+                    <span className="font-medium">{unmappedCases}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span>Total casos:</span>
                   <span className="font-medium">{totalCases}</span>
