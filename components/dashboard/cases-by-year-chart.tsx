@@ -14,30 +14,31 @@ import { useDashboardStats } from "@/lib/queries/dashboard"
 // fecha no tiene límites) no debe generar miles de barras.
 const MAX_GAP_FILL_YEARS = 50
 
-// La RPC sólo devuelve los años con casos. Se completan los años vacíos con 0
+// La RPC sólo devuelve los años con víctimas. Se completan los años vacíos con 0
 // para que el eje temporal sea continuo y cada barra quede en su año real.
 function fillYearGaps(rows: YearlyData[]): YearlyData[] {
   if (rows.length === 0) return rows
-  const byYear = new Map(rows.map((row) => [Number(row.year), row.cases]))
+  const byYear = new Map(rows.map((row) => [Number(row.year), row.victimas]))
   const years = [...byYear.keys()]
   const first = Math.min(...years)
   const last = Math.max(...years)
   if (last - first + 1 > MAX_GAP_FILL_YEARS) return rows
   const filled: YearlyData[] = []
   for (let year = first; year <= last; year++) {
-    filled.push({ year: String(year), cases: byYear.get(year) ?? 0 })
+    filled.push({ year: String(year), victimas: byYear.get(year) ?? 0 })
   }
   return filled
 }
 
 export function CasesByYearChart() {
   const { data: stats, isLoading, isFetching, error, refetch } = useDashboardStats()
-  const data = useMemo(() => fillYearGaps(stats?.casesByYear ?? []), [stats])
+  const data = useMemo(() => fillYearGaps(stats?.victimasByYear ?? []), [stats])
+  const sinFecha = stats?.victimasSinFecha ?? 0
 
   const definition = useMemo(
     () =>
       defineChart({
-        marks: [barY(data, { x: "year", y: "cases", radius: [4, 4, 0, 0] })],
+        marks: [barY(data, { x: "year", y: "victimas", radius: [4, 4, 0, 0] })],
         scales: {
           x: { scale: () => scaleBand().padding(0.2) },
           y: {
@@ -45,7 +46,7 @@ export function CasesByYearChart() {
             nice: true,
             grid: true,
             axis: {
-              label: "Casos",
+              label: "Víctimas",
               ticks: { format: (value) => value.toLocaleString("es-AR") },
             },
           },
@@ -65,14 +66,14 @@ export function CasesByYearChart() {
         ? "empty"
         : "ready"
 
-  const summary = data.map((row) => `${row.year}: ${row.cases}`).join(", ")
+  const summary = data.map((row) => `${row.year}: ${row.victimas}`).join(", ")
 
   return (
     <ChartCard
-      title="Casos por Año"
-      description="Evolución del número de casos registrados por año del hecho"
+      title="Víctimas por año"
+      description="Año del primer hecho de cada víctima"
       status={status}
-      emptyMessage="No hay casos registrados aún"
+      emptyMessage="No hay víctimas con fecha de hecho registrada aún"
       onRetry={() => refetch()}
       retrying={isFetching}
     >
@@ -80,10 +81,15 @@ export function CasesByYearChart() {
         <Chart
           definition={definition}
           height={300}
-          ariaLabel="Casos por año"
-          ariaDescription={`Cantidad de casos por año del hecho. ${summary}`}
+          ariaLabel="Víctimas por año del primer hecho"
+          ariaDescription={`Cantidad de víctimas por año del primer hecho. ${summary}`}
         />
       </div>
+      {sinFecha > 0 && (
+        <p className="text-xs text-slate-500 mt-3">
+          {sinFecha.toLocaleString("es-AR")} {sinFecha === 1 ? "víctima sin fecha de hecho no se grafica" : "víctimas sin fecha de hecho no se grafican"}.
+        </p>
+      )}
     </ChartCard>
   )
 }

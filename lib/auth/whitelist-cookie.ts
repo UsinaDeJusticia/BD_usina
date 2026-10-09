@@ -1,6 +1,6 @@
 // Cookie firmada (HMAC-SHA256) que cachea el chequeo de whitelist del
-// middleware. Sin esto, cada request autenticado pega a `allowed_users`
-// además de a `auth.getUser()`. Con esto, mientras la cookie sea válida
+// middleware. Sin esto, cada request autenticado consulta `is_allowed_user`
+// además de `auth.getUser()`. Con esto, mientras la cookie sea válida
 // (15 min) y el email matchee, no hay query a la BD.
 //
 // El secret se pasa por env var `WHITELIST_COOKIE_SECRET`. Si no está

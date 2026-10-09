@@ -2,7 +2,8 @@ import { Header } from "@/components/layout/header"
 import { DashboardStats } from "@/components/dashboard/dashboard-stats"
 import { CasesByYearChart } from "@/components/dashboard/cases-by-year-chart"
 import { StatusDistributionChart } from "@/components/dashboard/status-distribution-chart"
-import { ArgentinaMap } from "@/components/dashboard/argentina-map"
+import { ProvinceMap } from "@/components/dashboard/province-map"
+import { ProvinceRankingChart } from "@/components/dashboard/province-ranking-chart"
 
 export default function DashboardPage() {
   return (
@@ -24,8 +25,13 @@ export default function DashboardPage() {
           <StatusDistributionChart />
         </div>
 
-        {/* Argentina Map */}
-        <ArgentinaMap />
+        {/* Mapa y ranking por provincia */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+          <div className="lg:col-span-2">
+            <ProvinceMap />
+          </div>
+          <ProvinceRankingChart />
+        </div>
       </main>
     </div>
   )

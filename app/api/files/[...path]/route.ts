@@ -9,7 +9,7 @@ const SIGNED_URL_TTL_SECONDS = 60
  *
  * Flujo:
  *   1. Verifica que el request tenga sesión válida (cookie de Supabase auth).
- *   2. Verifica que el email del usuario esté en la whitelist `allowed_users`.
+ *   2. Verifica la lista blanca con public.is_allowed_user (ver scripts/013).
  *   3. Genera un signed URL de corta duración (60s) y redirecciona al cliente.
  *
  * Por qué redirect y no proxy: redirigir al CDN de Supabase evita pasar el
@@ -42,12 +42,8 @@ export async function GET(
     return NextResponse.json({ error: "No autenticado" }, { status: 401 })
   }
 
-  // 2. Whitelist: email en allowed_users
-  const { data: allowed, error: allowedError } = await supabase
-    .from("allowed_users")
-    .select("email")
-    .eq("email", user.email)
-    .maybeSingle()
+  // 2. Whitelist: decidida en la base por public.is_allowed_user (ver 013)
+  const { data: allowed, error: allowedError } = await supabase.rpc("is_allowed_user")
   if (allowedError) {
     return NextResponse.json(
       { error: "Error validando autorización" },

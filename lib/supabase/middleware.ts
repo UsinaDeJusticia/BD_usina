@@ -62,8 +62,8 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-    // Cache hit: cookie firmada con TTL de 15 min. Evita pegarle a
-    // `allowed_users` en cada request.
+    // Cache hit: cookie firmada con TTL de 15 min. Evita consultar
+    // `is_allowed_user` en cada request.
     const secret = process.env.WHITELIST_COOKIE_SECRET
     const cookieValue = request.cookies.get(WHITELIST_COOKIE_NAME)?.value
     let cacheHit = false
@@ -72,14 +72,12 @@ export async function updateSession(request: NextRequest) {
     }
 
     if (!cacheHit) {
-      const { data: allowedUser, error } = await supabase
-        .from("allowed_users")
-        .select("email")
-        .eq("email", email)
-        .maybeSingle()
+      // La decisión vive en la base (public.is_allowed_user: email en la lista y
+      // confirmado). allowed_users no es legible desde el navegador.
+      const { data: isAllowed, error } = await supabase.rpc("is_allowed_user")
 
-      if (error || !allowedUser) {
-        console.log("[v0] User not in whitelist:", email)
+      if (error || !isAllowed) {
+        console.log("[auth] usuario fuera de la lista de acceso")
         const url = request.nextUrl.clone()
         url.pathname = "/no-autorizado"
         return NextResponse.redirect(url)
