@@ -13,17 +13,23 @@
 --   sin_condena agrupa absuelto, sobreseido, prescripcion y menor_inimputable.
 --   Una víctima sin imputados queda en sin_imputado.
 --
--- Año y provincia: salen del PRIMER hecho de la víctima (menor fecha_hecho).
+-- Año y provincia: salen del PRIMER hecho de la víctima. La fecha es la propia
+-- de la víctima (victimas.fecha_hecho, que el formulario carga para cada una) y,
+-- si falta, la del hecho (hechos.fecha_hecho sólo se copia de la primera víctima).
 --
 -- KPI "Víctimas sin condena": víctimas cuyo estado es sin_condena.
 --
 -- Seguridad: security invoker, por lo que aplican las políticas RLS del caller
--- (ver scripts/013_rls_hardening.sql). Sólo se concede ejecución a
+-- (ver scripts/013a y 013b). Sólo se concede ejecución a
 -- authenticated; anon no puede invocarla.
 --
 -- Ejecutar UNA vez en SQL Editor, después de 011 (o en lugar de ella) y antes
 -- de 013.
 -- -----------------------------------------------------------------------------
+
+-- La app ya escribe victimas.fecha_hecho (no está en el DDL inicial). Se asegura
+-- su existencia para que la RPC no falle en una base construida desde el repo.
+alter table public.victimas add column if not exists fecha_hecho date;
 
 -- Rango de estado procesal. Acepta los códigos del formulario, los códigos y
 -- etiquetas antiguos (en inglés y en español) y devuelve un número: menor = más
@@ -68,13 +74,15 @@ set search_path = ''
 as $$
   with caso_victima as (
     -- Una fila por caso con víctima. Los casos sin víctima no cuentan.
+    -- fecha: la propia de la víctima; si falta, la del hecho.
     select
       c.victima_id,
       c.hecho_id,
       c.created_at as caso_creado,
-      h.fecha_hecho,
+      coalesce(v.fecha_hecho, h.fecha_hecho) as fecha,
       h.provincia
     from public.casos c
+    left join public.victimas v on v.id = c.victima_id
     left join public.hechos h on h.id = c.hecho_id
     where c.victima_id is not null
   ),
@@ -86,9 +94,9 @@ as $$
   ),
   primer_hecho as (
     -- Primer hecho de cada víctima (fecha más antigua; sin fecha al final).
-    select distinct on (victima_id) victima_id, fecha_hecho, provincia
+    select distinct on (victima_id) victima_id, fecha, provincia
     from caso_victima
-    order by victima_id, fecha_hecho asc nulls last, caso_creado asc
+    order by victima_id, fecha asc nulls last, caso_creado asc
   ),
   rango_estado as (
     -- Mejor (menor) rango entre los imputados de los hechos de cada víctima.
@@ -125,14 +133,14 @@ as $$
       '[]'::jsonb
     ) as data
     from (
-      select extract(year from fecha_hecho)::int as anio, count(*)::int as n
+      select extract(year from fecha)::int as anio, count(*)::int as n
       from primer_hecho
-      where fecha_hecho is not null
-      group by extract(year from fecha_hecho)
+      where fecha is not null
+      group by extract(year from fecha)
     ) y
   ),
   sin_fecha as (
-    select count(*)::int as n from primer_hecho where fecha_hecho is null
+    select count(*)::int as n from primer_hecho where fecha is null
   ),
   por_provincia as (
     select coalesce(

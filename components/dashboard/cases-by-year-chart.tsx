@@ -10,23 +10,30 @@ import { ChartCard, type ChartCardStatus } from "@/components/dashboard/chart-ca
 import type { YearlyData } from "@/lib/data/dashboard"
 import { useDashboardStats } from "@/lib/queries/dashboard"
 
-// Tope de años que se rellenan. Un año mal cargado (p. ej. 1026, el campo de
-// fecha no tiene límites) no debe generar miles de barras.
+// Tope de huecos a rellenar. Un año mal cargado (p. ej. 1026, el campo de fecha
+// no tiene límites) deja un salto enorme: no se rellena, pero tampoco se generan
+// miles de barras vacías.
 const MAX_GAP_FILL_YEARS = 50
 
-// La RPC sólo devuelve los años con víctimas. Se completan los años vacíos con 0
-// para que el eje temporal sea continuo y cada barra quede en su año real.
+// La RPC sólo devuelve los años con víctimas. Se completan con 0 los años vacíos
+// entre dos años con datos, para que cada barra quede en su año real.
 function fillYearGaps(rows: YearlyData[]): YearlyData[] {
   if (rows.length === 0) return rows
-  const byYear = new Map(rows.map((row) => [Number(row.year), row.victimas]))
-  const years = [...byYear.keys()]
-  const first = Math.min(...years)
-  const last = Math.max(...years)
-  if (last - first + 1 > MAX_GAP_FILL_YEARS) return rows
+  const sorted = [...rows].sort((a, b) => Number(a.year) - Number(b.year))
   const filled: YearlyData[] = []
-  for (let year = first; year <= last; year++) {
-    filled.push({ year: String(year), victimas: byYear.get(year) ?? 0 })
-  }
+  sorted.forEach((row, index) => {
+    if (index > 0) {
+      const previous = Number(sorted[index - 1].year)
+      const current = Number(row.year)
+      const missing = current - previous - 1
+      if (missing > 0 && missing <= MAX_GAP_FILL_YEARS) {
+        for (let year = previous + 1; year < current; year++) {
+          filled.push({ year: String(year), victimas: 0 })
+        }
+      }
+    }
+    filled.push(row)
+  })
   return filled
 }
 

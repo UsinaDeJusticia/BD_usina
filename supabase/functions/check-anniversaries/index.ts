@@ -50,6 +50,18 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // Sólo el cron puede disparar los avisos: envía el secreto en x-cron-secret.
+  // La clave anon es pública (va al navegador), así que sin este secreto
+  // cualquiera podría disparar emails. Si CRON_SECRET no está definido, el chequeo
+  // se omite. Definirlo obliga a que el cron envíe la misma cabecera (ver 009).
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  if (cronSecret && req.headers.get("x-cron-secret") !== cronSecret) {
+    return new Response(JSON.stringify({ error: "No autorizado" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;

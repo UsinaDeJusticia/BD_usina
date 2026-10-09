@@ -5,7 +5,6 @@ import type { Feature, Geometry } from "geojson"
 import { defineChart } from "@tanstack/charts"
 import { geoShape } from "@tanstack/charts/geo"
 import { Chart } from "@tanstack/charts/react"
-import { tooltip } from "@tanstack/charts/tooltip"
 import { scaleSequential, scaleSequentialSqrt } from "d3-scale"
 import { geoTransverseMercator } from "d3-geo"
 import { interpolateBlues } from "d3-scale-chromatic"
@@ -64,17 +63,10 @@ export function ProvinceMap() {
       ],
       scales: { x: null, y: null },
       color: { scale: () => scaleSequential(blue) },
-      tooltip: {
-        use: tooltip,
-        items: [
-          { id: "provincia", label: "Provincia", text: (point) => point.datum.properties.provincia },
-          {
-            id: "victimas",
-            label: "Víctimas",
-            text: (point) => point.datum.properties.victimas.toLocaleString("es-AR"),
-          },
-        ],
-      },
+      // El foco por centroide asignaba el polígono vecino al puntero (geoShape no
+      // tiene hit test por área). Sin foco, la provincia y su cifra se leen en la
+      // descripción accesible y en el ranking de al lado.
+      maxFocusDistance: 0,
       margin: 12,
     })
   }, [geo, porProvincia, ramp])
@@ -95,7 +87,16 @@ export function ProvinceMap() {
 
   // Gradiente de la leyenda: cada parada es blue(p) y el valor en p es max * p².
   const gradientStops = Array.from({ length: 11 }, (_, i) => `${blue(i / 10)} ${i * 10}%`).join(", ")
-  const midValue = Math.round(max * 0.25)
+  // Marcas de la leyenda. Con máximos chicos no hay un punto medio distinto del
+  // mínimo o del máximo, así que se omite para no mostrar valores repetidos.
+  const legendLabels =
+    max <= 0
+      ? []
+      : max === 1
+        ? ["1"]
+        : max < 4
+          ? ["1", max.toLocaleString("es-AR")]
+          : ["1", Math.round(max * 0.25).toLocaleString("es-AR"), max.toLocaleString("es-AR")]
 
   return (
     <ChartCard
@@ -118,19 +119,21 @@ export function ProvinceMap() {
             ariaDescription={`Víctimas por provincia del primer hecho. ${summary}`}
           />
           <div className="space-y-5 text-xs text-slate-600">
-            <div>
-              <p className="mb-2 font-medium text-slate-700">Víctimas</p>
-              <div
-                className="h-3 w-full rounded-sm"
-                style={{ background: `linear-gradient(to right, ${gradientStops})` }}
-                aria-hidden="true"
-              />
-              <div className="mt-1 flex justify-between tabular-nums">
-                <span>1</span>
-                <span>{midValue.toLocaleString("es-AR")}</span>
-                <span>{max.toLocaleString("es-AR")}</span>
+            {max > 0 && (
+              <div>
+                <p className="mb-2 font-medium text-slate-700">Víctimas</p>
+                <div
+                  className="h-3 w-full rounded-sm"
+                  style={{ background: `linear-gradient(to right, ${gradientStops})` }}
+                  aria-hidden="true"
+                />
+                <div className="mt-1 flex justify-between tabular-nums">
+                  {legendLabels.map((label) => (
+                    <span key={label}>{label}</span>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
             <div className="flex items-center gap-2">
               <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: SIN_VICTIMAS }} aria-hidden="true" />
               Sin víctimas

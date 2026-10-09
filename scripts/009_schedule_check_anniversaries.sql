@@ -11,6 +11,11 @@
 --
 -- Para CAMBIAR el horario o el comando en este proyecto: usar `cron.alter_job`
 -- (sección al final), no `cron.schedule`.
+--
+-- SEGURIDAD: la función rechaza la llamada si la variable CRON_SECRET está
+-- definida y la cabecera `x-cron-secret` no coincide. Si se define CRON_SECRET en
+-- la función, el cron también debe enviar esa cabecera (con el valor guardado en
+-- Vault), o los avisos dejan de salir. Definir ambas cosas en el mismo cambio.
 -- -----------------------------------------------------------------------------
 
 -- Paso 0 — Prerequisito: el secret con la anon key en Vault.

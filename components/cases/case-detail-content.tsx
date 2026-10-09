@@ -542,8 +542,18 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
   const handleDelete = async () => {
     try {
       setIsDeleting(true)
-      const { error } = await supabase.from("casos").delete().eq("id", caseId)
+      // La URL puede traer el id de un caso, de una víctima o de un hecho (rutas
+      // heredadas). Se borra el casos.id resuelto al cargar, y se verifica que
+      // haya borrado una fila: un DELETE sin coincidencias no devuelve error.
+      const casoIdToDelete = caseData?.caso_id
+      if (!casoIdToDelete) throw new Error("No se encontró el caso a eliminar")
+      const { data, error } = await supabase
+        .from("casos")
+        .delete()
+        .eq("id", casoIdToDelete)
+        .select("id")
       if (error) throw error
+      if (!data || data.length === 0) throw new Error("No se eliminó ningún caso")
       // Listados y dashboard quedaron stale tras el delete.
       queryClient.invalidateQueries({ queryKey: queryKeys.casesList })
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats })
