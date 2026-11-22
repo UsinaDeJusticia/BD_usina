@@ -18,6 +18,8 @@ interface IncidentFormProps {
     tipoCrimen?: string
     tipoArma?: string
     estadoCaso?: string
+    fechaHecho?: string
+    fechaFallecimiento?: string
   }
   onChange: (data: any) => void
   hideDates?: boolean
