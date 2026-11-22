@@ -1,18 +1,59 @@
 // supabase/functions/check-anniversaries/index.ts
 //
-// Notifica por email a info@usinadejusticia.org.ar y ejairsud@gmail.com
-// las víctimas cuyo cumpleaños o aniversario de fallecimiento cae al día
-// siguiente (preaviso de 24h, para preparar contenido conmemorativo).
+// Notifica por email las víctimas cuyo cumpleaños o aniversario de
+// fallecimiento cae al día siguiente (preaviso de 24h, para preparar
+// contenido conmemorativo).
 //
 // Disparada por pg_cron a las 15:00 UTC (12:00 AR). Ver scripts/009_*.sql.
+//
+// Seguridad:
+//   - La anon key es pública, así que `verify_jwt` sola no alcanza: cualquiera
+//     podría invocar la función y mandar emails en loop. Si el secret
+//     `CRON_SECRET` está configurado, se exige el header `x-cron-secret`
+//     con ese valor (comparación en tiempo constante). Ver scripts/014_*.sql.
+//   - Sin CORS: la invoca pg_cron (server-to-server), no un navegador.
+//   - Los nombres se escapan antes de insertarlos en el HTML del email.
+//
+// Variables de entorno (Supabase → Edge Functions → Secrets):
+//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY  (obligatorias)
+//   CRON_SECRET              (recomendada; activa la verificación del header)
+//   ANNIVERSARY_RECIPIENTS   (opcional; emails separados por coma)
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Resend } from "npm:resend";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const jsonHeaders = { "Content-Type": "application/json" };
+
+// Destinatarios por defecto (los mismos que antes). Se pueden reemplazar sin
+// tocar código con el secret ANNIVERSARY_RECIPIENTS.
+const DEFAULT_RECIPIENTS = ["info@usinadejusticia.org.ar", "ejairsud@gmail.com"];
+
+function getRecipients(): string[] {
+  const raw = Deno.env.get("ANNIVERSARY_RECIPIENTS");
+  if (!raw) return DEFAULT_RECIPIENTS;
+  const list = raw.split(",").map((e) => e.trim()).filter((e) => /^[^\s@]+@[^\s@]+$/.test(e));
+  return list.length > 0 ? list : DEFAULT_RECIPIENTS;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Comparación en tiempo constante para no filtrar el secret por timing. */
+function safeEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const ab = enc.encode(a);
+  const bb = enc.encode(b);
+  let diff = ab.length ^ bb.length;
+  const len = Math.max(ab.length, bb.length);
+  for (let i = 0; i < len; i++) diff |= (ab[i] ?? 0) ^ (bb[i] ?? 0);
+  return diff === 0;
+}
 
 const TZ = "America/Argentina/Buenos_Aires";
 
@@ -46,8 +87,26 @@ function dateInAR(d: Date): { year: number; month: number; day: number } {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...jsonHeaders, Allow: "POST" },
+    });
+  }
+
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  if (cronSecret) {
+    const provided = req.headers.get("x-cron-secret") ?? "";
+    if (!safeEqual(provided, cronSecret)) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: jsonHeaders,
+      });
+    }
+  } else {
+    // Compatibilidad: hasta configurar CRON_SECRET la función sigue
+    // funcionando como antes, pero queda registrado en los logs.
+    console.warn("CRON_SECRET no configurado: la función acepta cualquier JWT válido.");
   }
 
   try {
@@ -77,7 +136,7 @@ Deno.serve(async (req) => {
     if (!victimas || victimas.length === 0) {
       return new Response(
         JSON.stringify({ message: "No victims with dates found" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { headers: jsonHeaders },
       );
     }
 
@@ -110,7 +169,7 @@ Deno.serve(async (req) => {
     if (anniversaries.length === 0) {
       return new Response(
         JSON.stringify({ message: "No anniversaries tomorrow", date: targetISO }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { headers: jsonHeaders },
       );
     }
 
@@ -128,7 +187,7 @@ Deno.serve(async (req) => {
 
     const listaHtml = anniversaries.map((a) =>
       `<li style="background: white; padding: 15px 20px; margin-bottom: 10px; border-radius: 8px; border-left: 4px solid ${a.tipo === "fallecimiento" ? "#6b7280" : "#3b82f6"}; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-        <strong style="font-size: 16px; color: #1e3a5f;">${a.nombre}</strong>
+        <strong style="font-size: 16px; color: #1e3a5f;">${escapeHtml(a.nombre)}</strong>
         <br>
         <span style="color: ${a.tipo === "fallecimiento" ? "#6b7280" : "#3b82f6"}; font-size: 14px;">
           ${a.tipo === "fallecimiento" ? `Aniversario de Fallecimiento - ${a.años} año${a.años !== 1 ? "s" : ""}` : `Cumpleaños - Cumpliría ${a.años} años`}
@@ -162,7 +221,7 @@ Deno.serve(async (req) => {
     // 4. Enviar
     const { data: emailData, error: emailError } = await resend.emails.send({
       from: "Usina de Justicia <no-reply@usinadejusticia.org.ar>",
-      to: ["info@usinadejusticia.org.ar", "ejairsud@gmail.com"],
+      to: getRecipients(),
       subject: `🕯️ Mañana recordamos - ${tomorrowShort}`,
       html: htmlContent,
     });
@@ -177,13 +236,14 @@ Deno.serve(async (req) => {
         message: `Email sent with ${anniversaries.length} anniversary(ies) for ${targetISO}`,
         emailId: emailData?.id,
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { headers: jsonHeaders },
     );
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    // El detalle va a los logs de la función, no a la respuesta HTTP.
+    console.error("check-anniversaries error:", error instanceof Error ? error.message : error);
     return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      JSON.stringify({ error: "Internal error" }),
+      { status: 500, headers: jsonHeaders },
     );
   }
 });
