@@ -3,6 +3,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Download, FileText } from "lucide-react"
+import { safeExternalUrl } from "@/lib/url"
 
 interface FilePreviewDialogProps {
   open: boolean
@@ -13,7 +14,9 @@ interface FilePreviewDialogProps {
   archivoTipo?: string
 }
 
-export function FilePreviewDialog({ open, onOpenChange, url, tipo, titulo, archivoTipo }: FilePreviewDialogProps) {
+export function FilePreviewDialog({ open, onOpenChange, url: rawUrl, tipo, titulo, archivoTipo }: FilePreviewDialogProps) {
+  // Nunca renderizar esquemas peligrosos (javascript:, data:...) en src/href.
+  const url = safeExternalUrl(rawUrl) ?? ""
   const isImage = archivoTipo?.startsWith("image/") || tipo === "Foto"
   const isPDF = archivoTipo === "application/pdf" || tipo === "Resolución judicial" || url?.endsWith(".pdf")
   const isVideo = archivoTipo?.startsWith("video/") || tipo === "Video"
