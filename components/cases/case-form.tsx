@@ -19,6 +19,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/lib/queries/keys"
 import { findUnsafeResourceUrls } from "@/lib/cases/payloads"
 import { saveCase } from "@/lib/cases/save-case"
+import { notificarEventoCaso } from "@/lib/notifications/api"
 
 interface CaseFormProps {
   mode: "create" | "edit"
@@ -471,8 +472,9 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
 
     setIsSaving(true)
     try {
-      const { warnings } = await saveCase({
-        supabase: createClient(),
+      const supabase = createClient()
+      const { warnings, createdCasoIds } = await saveCase({
+        supabase,
         mode,
         caseId,
         formData,
@@ -490,6 +492,14 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
               : `Se han registrado ${formData.victims.length} víctima(s) correctamente.`,
         variant: warnings.length > 0 ? "destructive" : undefined,
       })
+
+      // Avisar al resto del equipo (si activaron "casos"). Nunca bloquea.
+      if (mode === "create") {
+        // Un aviso por hecho, aunque se carguen varias víctimas juntas.
+        void notificarEventoCaso(supabase, createdCasoIds[0], "caso_nuevo")
+      } else {
+        void notificarEventoCaso(supabase, realIds.casoId, "caso_editado")
+      }
 
       // Listados y dashboard quedaron stale tras el insert/update.
       queryClient.invalidateQueries({ queryKey: queryKeys.casesList })

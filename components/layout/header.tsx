@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { LogOut, BarChart3 } from "lucide-react"
 import Image from "next/image"
 import { createClient } from "@/lib/supabase/client"
+import { NotificationBell } from "@/components/notifications/notification-bell"
 
 export function Header() {
   const pathname = usePathname()
@@ -57,6 +58,7 @@ export function Header() {
           </div>
 
           <div className="flex items-center gap-3">
+            <NotificationBell />
             <Button
               variant="outline"
               size="sm"
