@@ -53,6 +53,13 @@ describe("payloads de casos", () => {
     expect(bad).toEqual(["malo", "data:text/html,x"])
   })
 
+  it("no bloquea por recursos YA guardados con enlaces viejos inválidos", () => {
+    const bad = findUnsafeResourceUrls({
+      victims: [{ resources: [{ id: "4b6c3a8e-1d2f-4a5b-9c8d-7e6f5a4b3c2d", titulo: "x", url: "pagina de usina de justicia " }] }],
+    })
+    expect(bad).toEqual([])
+  })
+
   it("isExistingResource / hasResourceContent", () => {
     expect(isExistingResource({ id: "4b6c3a8e-1d2f-4a5b-9c8d-7e6f5a4b3c2d" })).toBe(true)
     expect(isExistingResource({ id: "temp-123" })).toBe(false)

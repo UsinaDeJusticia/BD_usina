@@ -1,5 +1,31 @@
 # Endurecimiento de seguridad: pasos para producción
 
+## Estado al 22/11/2026
+
+| Paso | Estado |
+|---|---|
+| Backup | Hecho (dumps lógicos de `public`, `auth` y `storage`, guardados fuera del repo) |
+| 1. `013` | Aplicado. Verificado: la anon key recibe `42501` en todas las tablas y RPCs |
+| 2. `015` | Aplicado. Conteos de filas idénticos antes y después |
+| 3. `014` | Aplicado. 401 sin secreto y 405 con GET verificados. **Pendiente:** confirmar 200 en la corrida del 23/11 15:00 UTC |
+| 4. Auth | Política de contraseñas y redirect URLs: aplicados. Protección contra contraseñas filtradas: **requiere plan Pro** de Supabase |
+| 5. Vercel | Las 7 variables sensibles borradas |
+| 6. CSP | Pendiente: pasar a efectiva después de 1–2 semanas sin violaciones |
+| Código | **Pendiente: mergear la rama a `main`** y desplegar producción (ver abajo) |
+
+**Mergear pronto.** Producción sigue corriendo el código anterior. Con el CHECK de
+`015` ya activo, el código viejo no puede guardar enlaces sin `https://` (por
+ejemplo `infobae.com.ar`) y en varios caminos pierde ese recurso sin avisar. El
+código nuevo normaliza el enlace antes de guardarlo.
+
+**Datos detectados por el diagnóstico de `015`**, que el equipo tiene que revisar
+(no se modificó nada):
+
+- 5 recursos con enlaces sin esquema. El código nuevo los muestra y los
+  normaliza al editar; el que no es una URL ("pagina de usina de justicia") se
+  conserva tal cual y la app avisa para corregirlo.
+- 3 víctimas y 2 hechos sin caso: huérfanos que dejó el borrado anterior.
+
 Resultado de la auditoría de seguridad de noviembre de 2026. El código ya está
 corregido en el repo; estos pasos son los que **sólo se pueden hacer en
 Supabase/Vercel** y hay que ejecutarlos a mano, en este orden.

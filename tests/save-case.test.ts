@@ -253,6 +253,41 @@ run("saveCase (Postgres real)", () => {
       expect((await db.query("select 1 from recursos where imputado_id is not null")).rowCount).toBe(0)
     })
 
+    it("datos reales de prod: enlaces sin esquema o que no son URL no bloquean ni se pierden", async () => {
+      const s = await seedAndLoad()
+      // Igual que en producción tras 015: CHECK NOT VALID + filas viejas.
+      await db.query(`alter table recursos drop constraint if exists recursos_url_http_check`)
+      const legacy = (
+        await db.query(
+          `insert into recursos(hecho_id, victima_id, tipo, titulo, url) values
+             ($1, $2, 'Nota', 'Infobae', 'infobae.com.ar'),
+             ($1, $2, 'Nota', 'Página', 'pagina de usina de justicia ')
+           returning id, titulo, url`,
+          [s.caso.hecho_id, s.v[0].id],
+        )
+      ).rows
+      await db.query(
+        `alter table recursos add constraint recursos_url_http_check
+           check (url is null or url = '' or url ~* '^https?://' or url like '/api/files/%') not valid`,
+      )
+
+      const form = editForm(s)
+      form.victims[0].resources = legacy.map((r: any) => ({ ...r, tipo: "Nota", input_mode: "url" }))
+      const { warnings } = await edit(s, form)
+
+      expect(warnings).toEqual([
+        'recurso "Página" (su enlace no es una URL válida; corregilo para guardar cambios)',
+      ])
+      const rows = (await db.query("select titulo, url from recursos where id = any($1) order by titulo", [legacy.map((r: any) => r.id)])).rows
+      expect(rows).toEqual([
+        { titulo: "Infobae", url: "https://infobae.com.ar" }, // normalizado, pasa el CHECK
+        { titulo: "Página", url: "pagina de usina de justicia " }, // conservado tal cual
+      ])
+      // El resto del caso se guardó.
+      expect((await db.query("select provincia from hechos")).rows[0].provincia).toBe("Córdoba")
+      await db.query(`alter table recursos drop constraint recursos_url_http_check`)
+    })
+
     it("ficha vieja sin hecho: guarda la víctima y avisa", async () => {
       const s = await seedAndLoad()
       const form = editForm(s)

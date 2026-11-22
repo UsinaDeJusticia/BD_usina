@@ -155,6 +155,10 @@ export function buildResourceInsert(
  * data:, etc.). Se valida ANTES de escribir nada en la BD para no dejar el
  * caso a medio guardar.
  */
+// Sólo se validan los recursos NUEVOS. Los ya guardados pueden tener datos
+// viejos que no son URLs (p.ej. "pagina de usina de justicia"); bloquear el
+// guardado por eso impediría editar el caso. Esos se manejan en save-case:
+// no se actualizan (se conservan tal cual) y se avisa al usuario.
 export function findUnsafeResourceUrls(formData: any): string[] {
   const all: any[] = [
     ...(formData.resources || []),
@@ -162,6 +166,6 @@ export function findUnsafeResourceUrls(formData: any): string[] {
     ...(formData.accused || []).flatMap((a: any) => a.resources || []),
   ]
   return all
-    .filter((r) => !r?.archivo_path && isUnsafeExternalUrl(r?.url))
+    .filter((r) => !isExistingResource(r) && !r?.archivo_path && isUnsafeExternalUrl(r?.url))
     .map((r) => r.titulo || r.url || "Sin título")
 }

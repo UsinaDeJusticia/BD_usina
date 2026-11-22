@@ -13,6 +13,7 @@
 //   - Recursos a eliminar: primero las filas, después los archivos.
 
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { isUnsafeExternalUrl } from "@/lib/url"
 import {
   buildImputadoFields,
   buildImputadoInsert,
@@ -105,6 +106,13 @@ export async function saveCase({
     if (!Array.isArray(resources)) return
     // 1) Update de los que ya estaban en BD por si fueron editados.
     for (const resource of resources.filter(isExistingResource)) {
+      // Recurso viejo con un "enlace" que no es URL: no se toca, para no
+      // perder ese texto (y el CHECK recursos_url_http_check rechazaría el
+      // update). Si el usuario lo corrige a una URL válida, sí se guarda.
+      if (!resource.archivo_path && isUnsafeExternalUrl(resource.url)) {
+        warnings.push(`recurso "${resource.titulo || resource.url}" (su enlace no es una URL válida; corregilo para guardar cambios)`)
+        continue
+      }
       const { error } = await supabase.from("recursos").update(buildResourceUpdate(resource)).eq("id", resource.id)
       if (error) throw error
     }
