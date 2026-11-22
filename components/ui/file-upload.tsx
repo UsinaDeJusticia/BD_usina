@@ -52,6 +52,13 @@ export function FileUpload({
       const file = acceptedFiles[0]
       if (!file) return
 
+      // SVG puede contener scripts: no se aceptan aunque matcheen "image/*".
+      // El bucket también lo rechaza del lado servidor (scripts/015_*.sql).
+      if (file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg")) {
+        setError("Los archivos SVG no están permitidos.")
+        return
+      }
+
       setIsUploading(true)
       setError(null)
 

@@ -25,6 +25,7 @@ import {
 } from "lucide-react"
 import { FileUpload } from "@/components/ui/file-upload"
 import { getPublicFileUrl, formatFileSize } from "@/lib/supabase/storage"
+import { isUnsafeExternalUrl, openExternalUrl } from "@/lib/url"
 
 interface SavedResource {
   id: string
@@ -33,7 +34,7 @@ interface SavedResource {
   descripcion: string | null
   url: string | null
   fuente: string | null
-  fecha: string | null
+  fecha?: string | null
   archivo_path: string | null
   archivo_nombre: string | null
   archivo_tipo: string | null
@@ -195,10 +196,9 @@ export function ResourcesForm({ data = [], onChange, savedResources = [], onDele
 
   const handleDownload = (resource: SavedResource) => {
     if (resource.archivo_path) {
-      const url = getPublicFileUrl(resource.archivo_path)
-      window.open(url, "_blank")
+      openExternalUrl(getPublicFileUrl(resource.archivo_path))
     } else if (resource.url) {
-      window.open(resource.url, "_blank")
+      openExternalUrl(resource.url)
     }
   }
 
@@ -327,7 +327,7 @@ export function ResourcesForm({ data = [], onChange, savedResources = [], onDele
         <div className="text-center py-8 text-slate-500">
           <p>No hay recursos nuevos para agregar.</p>
           <p className="text-sm">
-            Haga clic en "Agregar Recurso" para añadir archivos, enlaces a noticias, videos, fotos, etc.
+            Haga clic en &ldquo;Agregar Recurso&rdquo; para añadir archivos, enlaces a noticias, videos, fotos, etc.
           </p>
         </div>
       ) : (
@@ -442,13 +442,18 @@ export function ResourcesForm({ data = [], onChange, savedResources = [], onDele
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => window.open(resource.url, "_blank")}
+                            onClick={() => openExternalUrl(resource.url)}
                             className="flex items-center gap-1"
                           >
                             <ExternalLink className="w-3 h-3" />
                           </Button>
                         )}
                       </div>
+                      {!resource.archivo_path && isUnsafeExternalUrl(resource.url) && (
+                        <p className="mt-1 text-xs text-red-600">
+                          URL inválida: sólo se aceptan enlaces http:// o https://. No se guardará.
+                        </p>
+                      )}
                     </TabsContent>
                     <TabsContent value="file" className="mt-3">
                       <FileUpload

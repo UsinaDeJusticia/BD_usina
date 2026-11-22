@@ -11,33 +11,48 @@ Sistema de gestión y seguimiento de casos de víctimas de inseguridad, desarrol
 
 ## 🚀 Desarrollo Local
 
-### Modo Mock (Usuario de Prueba)
+### Requisitos
 
-Por defecto, la aplicación está configurada en **modo desarrollo** con autenticación simplificada para facilitar las pruebas.
+- Node.js 20 o superior
+- Un proyecto de Supabase con el esquema de `scripts/` aplicado (ver `scripts/README.md`)
 
-**Usuario Mock Activo:**
-- Email: `desarrollo@usinajusticia.org`
-- Acceso directo sin necesidad de login real
-- Indicador visual en el header (badge amarillo)
+### Variables de entorno
 
-**Cómo desactivar el modo mock:**
+Crear `.env.local` (está en `.gitignore`, nunca commitearlo):
 
-En `components/auth/auth-guard.tsx`, cambia:
-\`\`\`typescript
-const DEV_BYPASS_AUTH = true  // Cambiar a false para usar autenticación real
-\`\`\`
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://<proyecto>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
+# Opcional pero recomendado: cachea 15 min el chequeo de whitelist del middleware.
+# Generar con: openssl rand -hex 32
+WHITELIST_COOKIE_SECRET=<secreto aleatorio>
+```
 
-### Variables de Entorno Requeridas
+La app no usa la `service_role` key: no hace falta configurarla en Vercel.
 
-Para usar autenticación real con Supabase, necesitas configurar las siguientes variables:
+### Comandos
 
-\`\`\`env
-NEXT_PUBLIC_SUPABASE_URL=tu_url_de_supabase
-NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_anon_key
-SUPABASE_SERVICE_ROLE_KEY=tu_service_role_key
-\`\`\`
+```bash
+npm ci              # instala exactamente lo del package-lock.json
+npm run dev         # desarrollo
+npm run typecheck   # TypeScript
+npm run lint        # ESLint
+npm test            # tests (los de integración necesitan TEST_DATABASE_URL)
+npm run build       # build de producción (falla si hay errores de tipos)
+```
 
-Agrega estas variables en la sección **Vars** del sidebar en v0.app.
+Tests de integración con Postgres local:
+
+```bash
+TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npm test
+```
+
+## 🔒 Seguridad
+
+- Acceso: login con Supabase Auth + whitelist (`allowed_users`) validada en el
+  middleware **y** en la base (RLS, `scripts/013_harden_rls.sql`).
+- Archivos: bucket privado; se sirven por `/api/files/...` con signed URLs de 60 s.
+- Pasos pendientes de aplicar en producción: ver `docs/security-hardening.md`.
 
 ## 🔧 Características
 
@@ -46,7 +61,7 @@ Agrega estas variables en la sección **Vars** del sidebar en v0.app.
 - ✅ Filtros avanzados por fecha, provincia, estado
 - ✅ Carga de documentos y archivos adjuntos
 - ✅ Vista animada y vista de grilla
-- ✅ Autenticación con Supabase (o modo mock para desarrollo)
+- ✅ Autenticación con Supabase + whitelist de usuarios
 - ✅ Integración con base de datos PostgreSQL
 
 ## 📦 Deployment

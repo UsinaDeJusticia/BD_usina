@@ -125,6 +125,12 @@ function ChartTooltipContent({
     indicator?: 'line' | 'dot' | 'dashed'
     nameKey?: string
     labelKey?: string
+    // recharts 3 ya no expone `payload`/`label` en las props de <Tooltip>;
+    // se inyectan en runtime al renderizar `content`.
+     
+    payload?: any[]
+     
+    label?: any
   }) {
   const { config } = useChart()
 
@@ -257,7 +263,11 @@ function ChartLegendContent({
   verticalAlign = 'bottom',
   nameKey,
 }: React.ComponentProps<'div'> &
-  Pick<RechartsPrimitive.LegendProps, 'payload' | 'verticalAlign'> & {
+  {
+     
+    payload?: any[]
+    verticalAlign?: 'top' | 'middle' | 'bottom'
+  } & {
     hideIcon?: boolean
     nameKey?: string
   }) {

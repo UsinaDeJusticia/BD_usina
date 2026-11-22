@@ -1,3 +1,5 @@
+-- NOTA: el comando del job se actualiza en 014_cron_secret.sql para mandar
+-- además el header x-cron-secret. Usar ese comando, no el de este archivo.
 -- =============================================================================
 -- Cron job: alerta-aniversarios -> Edge Function `check-anniversaries`
 -- =============================================================================

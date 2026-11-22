@@ -22,7 +22,7 @@ function base64UrlEncode(bytes: Uint8Array | string): string {
   return btoa(raw).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")
 }
 
-function base64UrlDecodeToBytes(s: string): Uint8Array {
+function base64UrlDecodeToBytes(s: string): Uint8Array<ArrayBuffer> {
   const padded = s.replace(/-/g, "+").replace(/_/g, "/")
     .padEnd(Math.ceil(s.length / 4) * 4, "=")
   return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0))
@@ -63,7 +63,7 @@ export async function verifyWhitelistCookie(
   const sigB64 = cookie.slice(dot + 1)
 
   let payload: string
-  let sigBytes: Uint8Array
+  let sigBytes: Uint8Array<ArrayBuffer>
   try {
     payload = new TextDecoder().decode(base64UrlDecodeToBytes(payloadB64))
     sigBytes = base64UrlDecodeToBytes(sigB64)

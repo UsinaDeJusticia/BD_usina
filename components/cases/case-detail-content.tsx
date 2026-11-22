@@ -47,6 +47,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { FilePreviewDialog } from "@/components/ui/file-preview-dialog"
 import { formatDateUTC } from "@/lib/utils"
+import { safeExternalUrl } from "@/lib/url"
 import { useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/lib/queries/keys"
 
@@ -237,12 +238,12 @@ function ResourceViewer({ recursos, getFileUrl, title = "Recursos Adjuntos" }: R
   if (recursos.length === 0) return null
 
   const handlePreview = (recurso: Recurso) => {
-    const url = recurso.archivo_path ? getFileUrl(recurso.archivo_path) : recurso.url || ""
+    const url = recurso.archivo_path ? getFileUrl(recurso.archivo_path) : safeExternalUrl(recurso.url) || ""
     setPreviewData({
       url,
       tipo: recurso.tipo || "",
       titulo: recurso.titulo || recurso.archivo_nombre || "Sin título",
-      archivoTipo: recurso.archivo_tipo,
+      archivoTipo: recurso.archivo_tipo ?? undefined,
     })
     setPreviewOpen(true)
   }
@@ -300,9 +301,9 @@ function ResourceViewer({ recursos, getFileUrl, title = "Recursos Adjuntos" }: R
                 >
                   <Download className="w-3 h-3" />
                 </a>
-              ) : recurso.url ? (
+              ) : safeExternalUrl(recurso.url) ? (
                 <a
-                  href={recurso.url}
+                  href={safeExternalUrl(recurso.url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-200 text-slate-700 text-xs font-medium rounded-md hover:bg-slate-300 transition-colors"
@@ -522,9 +523,7 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
     }
 
     // Dedup por id (un recurso puede matchear más de un filtro).
-    const uniqueRecursos = recursosData.filter(
-      (r, index, self) => index === self.findIndex((t) => t.id === r.id),
-    )
+    const uniqueRecursos = Array.from(new Map(recursosData.map((r) => [r.id, r])).values())
 
     setCaseData({
       caso_id: casoId,
@@ -542,8 +541,18 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
   const handleDelete = async () => {
     try {
       setIsDeleting(true)
-      const { error } = await supabase.from("casos").delete().eq("id", caseId)
-      if (error) throw error
+      // `delete_caso` (scripts/015_data_integrity.sql) borra el caso de forma
+      // transaccional, sin dejar víctima/hecho huérfanos, y guarda un
+      // snapshot recuperable. Si la función todavía no fue creada en la base,
+      // se usa el borrado anterior para no romper el botón.
+      const { error: rpcError } = await supabase.rpc("delete_caso", { p_caso_id: caseId })
+      if (rpcError) {
+        // PGRST202: PostgREST no encuentra la función en su schema cache.
+        const functionMissing = rpcError.code === "PGRST202" || rpcError.code === "42883"
+        if (!functionMissing) throw rpcError
+        const { error } = await supabase.from("casos").delete().eq("id", caseId)
+        if (error) throw error
+      }
       // Listados y dashboard quedaron stale tras el delete.
       queryClient.invalidateQueries({ queryKey: queryKeys.casesList })
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats })

@@ -1,0 +1,35 @@
+# Scripts SQL
+
+Los scripts se ejecutan **a mano** en el SQL Editor de Supabase, en orden.
+No hay herramienta de migraciones: este archivo es el registro de qué se
+aplicó y qué falta. **Actualizalo cada vez que corras un script en producción.**
+
+| Script | Qué hace | Estado en producción |
+|---|---|---|
+| `001_create_tables.sql` | Tablas base + RLS abierta (`USING (true)`) | Aplicado |
+| `001-add-estado-column.sql` | Columna `casos.estado` (numeración duplicada histórica) | Aplicado |
+| `002_add_prision_perpetua.sql` | Columna `imputados.prision_perpetua` | Aplicado |
+| `003_setup_storage_instructions.sql` | Instrucciones viejas del bucket. **Obsoleto**: lo reemplaza `010` | — |
+| `004`–`006` | No existen en el repo (se aplicaron desde v0 / dashboard) | — |
+| `007_add_instancias_judiciales_rls.sql` | RLS abierta en `instancias_judiciales` | Aplicado |
+| `008_add_otra_intervencion_seguimiento.sql` | Columnas de "otra intervención" | Aplicado |
+| `009_schedule_check_anniversaries.sql` | Documenta el cron del email de aniversarios | Aplicado |
+| `010_secure_storage.sql` | Bucket privado + policies con whitelist | Aplicado (2026-05-26) |
+| `011_dashboard_rpc.sql` | RPC `get_dashboard_stats` | Aplicado |
+| `012_performance_indexes.sql` | Índices | Aplicado |
+| `013_harden_rls.sql` | RLS con whitelist en todas las tablas (cierra el acceso anónimo) | Aplicado (2026-11-22). Producción ya tenía una variante con whitelist; el backup/rollback restaura esa variante |
+| `013_harden_rls_rollback.sql` | Vuelve atrás `013` (sólo emergencias) | — |
+| `014_cron_secret.sql` | Secreto compartido cron → edge function | Aplicado (2026-11-22); confirmar la corrida del 23/11 15:00 UTC |
+| `015_data_integrity.sql` | `delete_caso()` con snapshot, CHECK de URLs, límites del bucket | Aplicado (2026-11-22) |
+
+Los pasos completos y el orden recomendado están en `docs/security-hardening.md`.
+
+## Cómo se prueban
+
+`tests/fixtures/schema.sql` reconstruye el esquema (con roles y `auth.email()`
+como en Supabase) y `tests/sql-migrations.test.ts` aplica `013` y `015` sobre
+datos de ejemplo, verifica permisos por rol, que no se pierda ninguna fila, el
+rollback y la recuperación desde snapshots. Corre en CI en cada PR.
+
+Si en producción hay columnas o tablas que no están en el fixture, agregalas
+ahí para que los tests sigan representando la base real.

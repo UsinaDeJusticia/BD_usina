@@ -1,3 +1,8 @@
+-- ⚠️ OBSOLETO — NO SEGUIR ESTAS INSTRUCCIONES.
+-- Dejaban el bucket PÚBLICO y sin whitelist. La configuración vigente es la de
+-- 010_secure_storage.sql (bucket privado) + 015_data_integrity.sql (límites).
+-- Se conserva sólo como registro histórico.
+
 -- =====================================================
 -- INSTRUCCIONES PARA CONFIGURAR SUPABASE STORAGE
 -- =====================================================

@@ -22,7 +22,7 @@ interface FollowUpFormProps {
   onDeleteSavedResource?: (resourceId: string) => void
 }
 
-interface FollowUpData {
+interface _FollowUpData {
   tipoAcompanamiento?: string[]
   abogadoQuerellante?: string
   abogadoUsinaFirmo?: string
@@ -309,7 +309,7 @@ export function FollowUpForm({
 
               {!data.datosAbogadosQuerellantes || data.datosAbogadosQuerellantes.length === 0 ? (
                 <div className="text-center py-3 text-amber-700 text-sm border border-dashed border-amber-300 rounded bg-white">
-                  <p>No hay abogados registrados. Haga clic en "Agregar Abogado".</p>
+                  <p>No hay abogados registrados. Haga clic en &ldquo;Agregar Abogado&rdquo;.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -418,7 +418,7 @@ export function FollowUpForm({
 
           {!data.listaMiembrosAsignados || data.listaMiembrosAsignados.length === 0 ? (
             <div className="text-center py-3 text-blue-700 text-sm border border-dashed border-blue-300 rounded bg-white">
-              <p>No hay miembros asignados. Haga clic en "Agregar Miembro".</p>
+              <p>No hay miembros asignados. Haga clic en &ldquo;Agregar Miembro&rdquo;.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -489,7 +489,7 @@ export function FollowUpForm({
 
           {!data.listaContactosFamiliares || data.listaContactosFamiliares.length === 0 ? (
             <div className="text-center py-3 text-green-700 text-sm border border-dashed border-green-300 rounded bg-white">
-              <p>No hay contactos familiares. Haga clic en "Agregar Contacto".</p>
+              <p>No hay contactos familiares. Haga clic en &ldquo;Agregar Contacto&rdquo;.</p>
             </div>
           ) : (
             <div className="space-y-3">

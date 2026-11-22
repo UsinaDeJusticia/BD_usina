@@ -17,6 +17,8 @@ import { createClient } from "@/lib/supabase/client"
 import { Badge } from "@/components/ui/badge"
 import { useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/lib/queries/keys"
+import { findUnsafeResourceUrls } from "@/lib/cases/payloads"
+import { saveCase } from "@/lib/cases/save-case"
 
 interface CaseFormProps {
   mode: "create" | "edit"
@@ -37,7 +39,7 @@ const getEmptyVictimData = () => ({
   municipioResidencia: "",
   fechaHecho: "",
   fechaFallecimiento: "",
-  resources: [],
+  resources: [] as any[],
 })
 
 export function CaseForm({ mode, caseId }: CaseFormProps) {
@@ -62,12 +64,12 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
       tipoArma: "",
       estadoCaso: "En investigación",
     },
-    accused: [],
+    accused: [] as any[],
     followUp: {
       otraIntervencion: false,
       otraIntervencionDescripcion: "",
-    },
-    resources: [],
+    } as Record<string, any>,
+    resources: [] as any[],
   })
 
   const [realIds, setRealIds] = useState<{
@@ -433,49 +435,6 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
     setResourcesToDelete((prev) => [...prev, resourceId])
   }
 
-  const buildImputadoInsert = (accused: any, hechoId: string) => ({
-    hecho_id: hechoId,
-    apellido_nombre: accused.apellidoNombre,
-    alias: accused.alias || null,
-    edad: accused.edad || null,
-    menor_edad: accused.menorEdad || false,
-    nacionalidad: accused.nacionalidad || null,
-    juzgado_ufi: accused.juzgadoUfi || null,
-    estado_procesal: accused.estadoProcesal || null,
-    pena: accused.pena || null,
-    juicio_abreviado: accused.juicioAbreviado || false,
-    prision_perpetua: accused.prisionPerpetua || false,
-    fecha_veredicto: accused.fechaVeredicto || null,
-    documento_identidad: accused.documentoIdentidad || null,
-    tribunal_fallo: accused.tribunalFallo || null,
-    es_extranjero: accused.esExtranjero || false,
-    detenido_previo: accused.detenidoPrevio || false,
-    fallecido: accused.fallecido || false,
-    es_reincidente: accused.esReincidente || false,
-    cargos: accused.cargos || null,
-  })
-
-  // Un recurso es "existente en BD" si su id es un UUID v4 real (36 chars
-  // con guiones, no empieza con "temp-"). El resto (null, "", "temp-*",
-  // numérico, o con flag isNew) es un recurso recién agregado en el form.
-  // Antes esta misma lógica estaba copiada 3 veces en handleSave.
-  const isExistingResource = (r: any): boolean =>
-    typeof r.id === "string" &&
-    r.id.length === 36 &&
-    r.id.includes("-") &&
-    !r.id.startsWith("temp-")
-
-  // Campos editables de un recurso. Los `archivo_*` no se actualizan acá:
-  // si el usuario reemplaza un archivo, el flujo es borrar el recurso
-  // viejo (resourcesToDelete) y crear uno nuevo.
-  const buildResourceUpdate = (resource: any) => ({
-    tipo: resource.tipo && resource.tipo !== "" ? resource.tipo : "other",
-    titulo: resource.titulo || resource.archivo_nombre || "Sin título",
-    url: resource.url || null,
-    fuente: resource.fuente || null,
-    descripcion: resource.descripcion || null,
-  })
-
   const addVictim = () => {
     setFormData((prev) => ({
       ...prev,
@@ -499,700 +458,37 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
   }
 
   const handleSave = async () => {
-    const supabase = createClient()
+    // Validación previa: no escribir nada si hay URLs peligrosas/ inválidas.
+    const unsafe = findUnsafeResourceUrls(formData)
+    if (unsafe.length > 0) {
+      toast({
+        title: "URL inválida",
+        description: `Sólo se aceptan enlaces http:// o https://. Revisá: ${unsafe.slice(0, 3).join(", ")}`,
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsSaving(true)
-
     try {
-      if (mode === "edit" && caseId) {
-        const hechoId = realIds.hechoId
-
-        if (resourcesToDelete.length > 0) {
-          // First, get the file paths to delete from storage
-          const { data: resourcesToRemove } = await supabase
-            .from("recursos")
-            .select("archivo_path")
-            .in("id", resourcesToDelete)
-
-          // Delete files from storage
-          if (resourcesToRemove && resourcesToRemove.length > 0) {
-            const pathsToDelete = resourcesToRemove.map((r) => r.archivo_path).filter((p): p is string => !!p)
-
-            if (pathsToDelete.length > 0) {
-              await supabase.storage.from("archivos-casos").remove(pathsToDelete)
-            }
-          }
-
-          // Delete records from database
-          const { error: deleteError } = await supabase.from("recursos").delete().in("id", resourcesToDelete)
-
-          if (deleteError) throw deleteError
-        }
-
-        for (const victim of formData.victims) {
-          if (victim.id) {
-            // Update existing victim
-            const { error: victimError } = await supabase
-              .from("victimas")
-              .update({
-                nombre_completo: victim.nombreCompleto || null,
-                fecha_nacimiento: victim.fechaNacimiento || null,
-                edad: victim.edad ? Number.parseInt(victim.edad) : null,
-                profesion: victim.profesion || null,
-                redes_sociales: victim.redesSociales || null,
-                nacionalidad: victim.nacionalidad || null,
-                notas_adicionales: victim.notasAdicionales || null,
-                provincia_residencia: victim.provinciaResidencia || null,
-                municipio_residencia: victim.municipioResidencia || null,
-                fecha_hecho: victim.fechaHecho || null,
-                fecha_fallecimiento: victim.fechaFallecimiento || null,
-              })
-              .eq("id", victim.id)
-
-            if (victimError) throw victimError
-
-            // Update + insert de recursos de la víctima.
-            if (victim.resources && Array.isArray(victim.resources) && victim.resources.length > 0) {
-              // 1) Actualizar los que ya estaban en BD por si fueron editados.
-              for (const resource of victim.resources.filter(isExistingResource)) {
-                const { error: updateError } = await supabase
-                  .from("recursos")
-                  .update(buildResourceUpdate(resource))
-                  .eq("id", resource.id)
-                if (updateError) throw updateError
-              }
-
-              // 2) Insertar los nuevos (sólo si tienen archivo o URL).
-              for (const resource of victim.resources.filter((r: any) => !isExistingResource(r))) {
-                if (resource.url || resource.archivo_path) {
-                  const { error: resourceError } = await supabase.from("recursos").insert([{
-                    victima_id: victim.id,
-                    hecho_id: hechoId,
-                    ...buildResourceUpdate(resource),
-                    archivo_path: resource.archivo_path || null,
-                    archivo_nombre: resource.archivo_nombre || null,
-                    archivo_tipo: resource.archivo_tipo || null,
-                    archivo_size: resource.archivo_size ? Number(resource.archivo_size) : null,
-                  }])
-                  if (resourceError) throw resourceError
-                }
-              }
-            }
-          } else {
-            const { data: newVictimData, error: victimInsertError } = await supabase
-              .from("victimas")
-              .insert([
-                {
-                  nombre_completo: victim.nombreCompleto || null,
-                  fecha_nacimiento: victim.fechaNacimiento || null,
-                  edad: victim.edad ? Number.parseInt(victim.edad) : null,
-                  profesion: victim.profesion || null,
-                  redes_sociales: victim.redesSociales || null,
-                  nacionalidad: victim.nacionalidad || null,
-                  notas_adicionales: victim.notasAdicionales || null,
-                  provincia_residencia: victim.provinciaResidencia || null,
-                  municipio_residencia: victim.municipioResidencia || null,
-                  fecha_hecho: victim.fechaHecho || null,
-                  fecha_fallecimiento: victim.fechaFallecimiento || null,
-                },
-              ])
-              .select()
-              .single()
-
-            if (victimInsertError) throw victimInsertError
-
-            // Create caso for new victim
-            const { error: casoInsertError } = await supabase.from("casos").insert([
-              {
-                victima_id: newVictimData.id,
-                hecho_id: hechoId,
-                estado: formData.incident.estadoCaso || "En investigación",
-                estado_general: "En investigación",
-              },
-            ])
-            if (casoInsertError) throw casoInsertError
-
-            // Insert victim resources
-            if (victim.resources && Array.isArray(victim.resources) && victim.resources.length > 0) {
-              for (const resource of victim.resources) {
-                if (resource.titulo || resource.url || resource.archivo_path) {
-                  await supabase.from("recursos").insert([
-                    {
-                      victima_id: newVictimData.id,
-                      hecho_id: hechoId,
-                      tipo: resource.tipo || null,
-                      titulo: resource.titulo || resource.archivo_nombre || "Sin título",
-                      url: resource.url || null,
-                      fuente: resource.fuente || null,
-                      descripcion: resource.descripcion || null,
-                      archivo_path: resource.archivo_path || null,
-                      archivo_nombre: resource.archivo_nombre || null,
-                      archivo_tipo: resource.archivo_tipo || null,
-                      archivo_size: resource.archivo_size ? Number(resource.archivo_size) : null,
-                    },
-                  ])
-                }
-              }
-            }
-          }
-        }
-
-        const { error: incidentError } = await supabase
-          .from("hechos")
-          .update({
-            provincia: formData.incident.provincia || null,
-            municipio: formData.incident.municipio || null,
-            localidad_barrio: formData.incident.localidadBarrio || null,
-            tipo_lugar: formData.incident.tipoLugar || null,
-            lugar_otro: formData.incident.lugarOtro || null,
-            resumen_hecho: formData.incident.resumenHecho || null,
-            tipo_crimen: formData.incident.tipoCrimen || null,
-            tipo_arma: formData.incident.tipoArma || null,
-          })
-          .eq("id", hechoId!)
-
-        if (incidentError) throw incidentError
-
-        if (hechoId) {
-          const { error: estadoError } = await supabase
-            .from("casos")
-            .update({
-              estado: formData.incident.estadoCaso || "En investigación",
-            })
-            .eq("hecho_id", hechoId)
-
-          if (estadoError) console.error("Error updating case status:", estadoError)
-        }
-
-        if (formData.accused && Array.isArray(formData.accused)) {
-          // Get current imputados IDs from DB to detect deletions
-          const { data: existingImputados } = await supabase.from("imputados").select("id").eq("hecho_id", hechoId!)
-
-          const existingImputadoIds = existingImputados?.map((i) => i.id) || []
-          const formImputadoIds = formData.accused
-            .filter((a: any) => a.id && typeof a.id === "string" && !a.id.startsWith("temp-"))
-            .map((a: any) => a.id)
-
-          // Delete imputados that were removed from the form (diffing)
-          const imputadosToDelete = existingImputadoIds.filter((id) => !formImputadoIds.includes(id))
-          for (const idToDelete of imputadosToDelete) {
-            // First delete related records
-            await supabase.from("recursos").delete().eq("imputado_id", idToDelete)
-            await supabase.from("instancias_judiciales").delete().eq("imputado_id", idToDelete)
-            await supabase.from("fechas_juicio").delete().eq("imputado_id", idToDelete)
-            // Then delete the imputado
-            await supabase.from("imputados").delete().eq("id", idToDelete)
-          }
-
-          // Process each imputado in the form
-          for (const accused of formData.accused) {
-            if (!accused.apellidoNombre) continue
-
-            const hasExistingId = accused.id && typeof accused.id === "string" && !accused.id.startsWith("temp-")
-
-            let accusedId: string
-
-            if (hasExistingId) {
-              const { error: updateError } = await supabase
-                .from("imputados")
-                .update({
-                  apellido_nombre: accused.apellidoNombre,
-                  alias: accused.alias || null,
-                  edad: accused.edad || null,
-                  menor_edad: accused.menorEdad || false,
-                  nacionalidad: accused.nacionalidad || null,
-                  juzgado_ufi: accused.juzgadoUfi || null,
-                  estado_procesal: accused.estadoProcesal || null,
-                  pena: accused.pena || null,
-                  juicio_abreviado: accused.juicioAbreviado || false,
-                  prision_perpetua: accused.prisionPerpetua || false,
-                  fecha_veredicto: accused.fechaVeredicto || null,
-                  documento_identidad: accused.documentoIdentidad || null,
-                  tribunal_fallo: accused.tribunalFallo || null,
-                  es_extranjero: accused.esExtranjero || false,
-                  detenido_previo: accused.detenidoPrevio || false,
-                  fallecido: accused.fallecido || false,
-                  es_reincidente: accused.esReincidente || false,
-                  cargos: accused.cargos || null,
-                })
-                .eq("id", accused.id)
-
-              if (updateError) throw updateError
-              accusedId = accused.id
-
-              // Save instances_judiciales for each accused
-              if (accused.instanciasJudiciales && Array.isArray(accused.instanciasJudiciales)) {
-                const { data: existingInstancias } = await supabase
-                  .from("instancias_judiciales")
-                  .select("id")
-                  .eq("imputado_id", accusedId)
-
-                const existingInstanciaIds = (existingInstancias || []).map((i) => i.id)
-                const formInstanciaIds = accused.instanciasJudiciales
-                  .filter((inst: any) => inst.id && typeof inst.id === "string" && !inst.id.startsWith("temp-"))
-                  .map((inst: any) => inst.id)
-
-                // Delete instances removed from form
-                const instanciasToDelete = existingInstanciaIds.filter((id) => !formInstanciaIds.includes(id))
-                for (const idToDelete of instanciasToDelete) {
-                  try {
-                    await supabase.from("instancias_judiciales").delete().eq("id", idToDelete)
-                  } catch (e) {
-                    console.error("[v0] Error deleting instancia:", e)
-                  }
-                }
-
-                // Update or insert instancias
-                for (const instancia of accused.instanciasJudiciales) {
-                  const hasInstanciaId =
-                    instancia.id && typeof instancia.id === "string" && !instancia.id.startsWith("temp-")
-
-                  try {
-                    if (hasInstanciaId) {
-                      // Update existing instancia
-                      const { error: updateError } = await supabase
-                        .from("instancias_judiciales")
-                        .update({
-                          numero_causa: instancia.numeroCausa || null,
-                          fiscal: instancia.fiscalFiscalia || null,
-                          fiscalia: instancia.fiscalFiscalia || null,
-                          caratula: instancia.caratula || null,
-                          orden_nivel: instancia.ordenNivel || null,
-                        })
-                        .eq("id", instancia.id)
-
-                      if (updateError) {
-                        console.error("[v0] Error updating instancia:", updateError)
-                        throw updateError
-                      }
-                    } else {
-                      // Insert new instancia
-                      const { error: insertError } = await supabase.from("instancias_judiciales").insert([
-                        {
-                          imputado_id: accusedId,
-                          numero_causa: instancia.numeroCausa || null,
-                          fiscal: instancia.fiscalFiscalia || null,
-                          fiscalia: instancia.fiscalFiscalia || null,
-                          caratula: instancia.caratula || null,
-                          orden_nivel: instancia.ordenNivel || null,
-                        },
-                      ])
-
-                      if (insertError) {
-                        console.error("[v0] Error inserting instancia:", insertError)
-                        throw insertError
-                      }
-                    }
-                  } catch (error) {
-                    console.error("[v0] Error in instancia operation:", error)
-                    // Continue with other instancias instead of failing completely
-                  }
-                }
-              }
-
-              if (accused.resources && Array.isArray(accused.resources)) {
-                // 1) Update de los que ya estaban en BD.
-                for (const resource of accused.resources.filter(isExistingResource)) {
-                  const { error: updateError } = await supabase
-                    .from("recursos")
-                    .update(buildResourceUpdate(resource))
-                    .eq("id", resource.id)
-                  if (updateError) throw updateError
-                }
-
-                // 2) Insert de los nuevos (sólo si tienen archivo o URL).
-                for (const resource of accused.resources.filter((r: any) => !isExistingResource(r))) {
-                  if (resource.url || resource.archivo_path) {
-                    await supabase.from("recursos").insert([{
-                      imputado_id: accusedId,
-                      hecho_id: hechoId,
-                      ...buildResourceUpdate(resource),
-                      archivo_path: resource.archivo_path || null,
-                      archivo_nombre: resource.archivo_nombre || null,
-                      archivo_tipo: resource.archivo_tipo || null,
-                      archivo_size: resource.archivo_size ? Number(resource.archivo_size) : null,
-                    }])
-                  }
-                }
-              }
-            } else {
-              const { data: accusedData, error: accusedError } = await supabase
-                .from("imputados")
-                .insert([buildImputadoInsert(accused, hechoId!)])
-                .select()
-                .single()
-
-              if (accusedError) throw accusedError
-              accusedId = accusedData.id
-
-              // Insert all instances for new imputado
-              if (accused.instanciasJudiciales && Array.isArray(accused.instanciasJudiciales)) {
-                for (const instancia of accused.instanciasJudiciales) {
-                  const { error: insertError } = await supabase.from("instancias_judiciales").insert([
-                    {
-                      imputado_id: accusedId,
-                      numero_causa: instancia.numeroCausa || null,
-                      fiscal: instancia.fiscalFiscalia || null,
-                      fiscalia: instancia.fiscalFiscalia || null,
-                      caratula: instancia.caratula || null,
-                      orden_nivel: instancia.ordenNivel || null,
-                    },
-                  ])
-
-                  if (insertError) {
-                    console.log("[v0] Error inserting instancia:", insertError)
-                  }
-                }
-              }
-
-              // Insert accused resources
-              if (accused.resources && Array.isArray(accused.resources)) {
-                for (const resource of accused.resources) {
-                  if (resource.url || resource.archivo_path) {
-                    await supabase.from("recursos").insert([
-                      {
-                        imputado_id: accusedId,
-                        hecho_id: hechoId,
-                        tipo: resource.tipo && resource.tipo !== "" ? resource.tipo : "other",
-                        titulo: resource.titulo || resource.archivo_nombre || "Sin título",
-                        url: resource.url || null,
-                        fuente: resource.fuente || null,
-                        descripcion: resource.descripcion || null,
-                        archivo_path: resource.archivo_path || null,
-                        archivo_nombre: resource.archivo_nombre || null,
-                        archivo_tipo: resource.archivo_tipo || null,
-                        archivo_size: resource.archivo_size ? Number(resource.archivo_size) : null,
-                      },
-                    ])
-                  }
-                }
-              }
-            }
-
-            await supabase.from("fechas_juicio").delete().eq("imputado_id", accusedId)
-            if (accused.trialDates && Array.isArray(accused.trialDates)) {
-              for (const date of accused.trialDates) {
-                if (date) {
-                  await supabase.from("fechas_juicio").insert([
-                    {
-                      imputado_id: accusedId,
-                      fecha_audiencia: date,
-                      hecho_id: hechoId,
-                    },
-                  ])
-                }
-              }
-            }
-          }
-        }
-
-        const { data: existingSeguimiento } = await supabase
-          .from("seguimiento")
-          .select("id")
-          .eq("hecho_id", hechoId!)
-          .single()
-
-        if (formData.followUp) {
-          const seguimientoData = {
-            hecho_id: hechoId,
-            primer_contacto: formData.followUp.primerContacto || null,
-            como_llego_caso: formData.followUp.comoLlegoCaso || null,
-            miembro_asignado: formData.followUp.miembroAsignado || null,
-            contacto_familia: formData.followUp.contactoFamiliar || null,
-            telefono_contacto: formData.followUp.telefonoContacto || null,
-            tipo_acompanamiento: formData.followUp.tipoAcompanamiento || null,
-            abogado_querellante: formData.followUp.abogadoQuerellante || null,
-            amicus_curiae: formData.followUp.amicusCuriae || false,
-            notas_seguimiento: formData.followUp.notasSeguimiento || null,
-            email_contacto: formData.followUp.emailContacto || null,
-            direccion_contacto: formData.followUp.direccionContacto || null,
-            telefono_miembro: formData.followUp.telefonoMiembro || null,
-            email_miembro: formData.followUp.emailMiembro || null,
-            fecha_asignacion: formData.followUp.fechaAsignacion || null,
-            proximas_acciones: formData.followUp.proximasAcciones || null,
-            parentesco_contacto: formData.followUp.parentescoContacto || null,
-            parentesco_otro: formData.followUp.parentescoOtro || null,
-            tiene_abogado_querellante: formData.followUp.tieneAbogadoQuerellante || "ns_nc",
-            abogado_usina_amicus: formData.followUp.abogadoUsinaAmicus || null,
-            abogado_amicus_firmante: formData.followUp.abogadoAmicusFirmante || null,
-            lista_miembros_asignados: formData.followUp.listaMiembrosAsignados || null,
-            lista_contactos_familiares: formData.followUp.listaContactosFamiliares || null,
-            datos_abogados_querellantes: formData.followUp.datosAbogadosQuerellantes || null,
-            otra_intervencion: formData.followUp.otraIntervencion || false,
-            otra_intervencion_descripcion: formData.followUp.otraIntervencionDescripcion || null,
-          }
-
-          if (existingSeguimiento?.id) {
-            const { error: followUpError } = await supabase
-              .from("seguimiento")
-              .update(seguimientoData)
-              .eq("id", existingSeguimiento.id)
-            if (followUpError) throw followUpError
-          } else {
-            const { error: followUpError } = await supabase.from("seguimiento").insert([seguimientoData])
-            if (followUpError) throw followUpError
-          }
-        }
-
-        if (formData.resources && Array.isArray(formData.resources) && formData.resources.length > 0) {
-          // 1) Update de recursos generales del hecho ya existentes.
-          for (const resource of formData.resources.filter(isExistingResource)) {
-            const { error: updateError } = await supabase
-              .from("recursos")
-              .update(buildResourceUpdate(resource))
-              .eq("id", resource.id)
-            if (updateError) throw updateError
-          }
-
-          // 2) Insert de los nuevos (sólo si tienen archivo o URL).
-          for (const resource of formData.resources.filter((r: any) => !isExistingResource(r))) {
-            if (resource.url || resource.archivo_path) {
-              const { error: resourceError } = await supabase.from("recursos").insert([{
-                hecho_id: hechoId,
-                imputado_id: null,
-                victima_id: null,
-                ...buildResourceUpdate(resource),
-                archivo_path: resource.archivo_path || null,
-                archivo_nombre: resource.archivo_nombre || null,
-                archivo_tipo: resource.archivo_tipo || null,
-                archivo_size: resource.archivo_size ? Number(resource.archivo_size) : null,
-              }])
-              if (resourceError) throw resourceError
-            }
-          }
-        }
-      } else {
-        // CREATE MODE
-        // Step 1: Insert the HECHO (once, use dates from the first victim)
-        const firstVictim = formData.victims[0]
-
-        const { data: incidentData, error: incidentError } = await supabase
-          .from("hechos")
-          .insert([
-            {
-              victima_id: null,
-              fecha_hecho: firstVictim.fechaHecho || null,
-              fecha_fallecimiento: firstVictim.fechaFallecimiento || null,
-              provincia: formData.incident.provincia || null,
-              municipio: formData.incident.municipio || null,
-              localidad_barrio: formData.incident.localidadBarrio || null,
-              tipo_lugar: formData.incident.tipoLugar || null,
-              lugar_otro: formData.incident.lugarOtro || null,
-              resumen_hecho: formData.incident.resumenHecho || null,
-              tipo_crimen: formData.incident.tipoCrimen || null,
-              tipo_arma: formData.incident.tipoArma || null,
-              estado_caso: formData.incident.estadoCaso || null,
-            },
-          ])
-          .select()
-          .single()
-
-        if (incidentError) throw incidentError
-        const hechoId = incidentData.id
-
-        // Step 2: Iterate through VICTIMS array
-        for (let i = 0; i < formData.victims.length; i++) {
-          const victim = formData.victims[i]
-
-          // Insert victim
-          const { data: victimData, error: victimError } = await supabase
-            .from("victimas")
-            .insert([
-              {
-                nombre_completo: victim.nombreCompleto || null,
-                fecha_nacimiento: victim.fechaNacimiento || null,
-                edad: victim.edad ? Number.parseInt(victim.edad) : null,
-                profesion: victim.profesion || null,
-                redes_sociales: victim.redesSociales || null,
-                nacionalidad: victim.nacionalidad || null,
-                notas_adicionales: victim.notasAdicionales || null,
-                provincia_residencia: victim.provinciaResidencia || null,
-                municipio_residencia: victim.municipioResidencia || null,
-                fecha_hecho: victim.fechaHecho || null,
-                fecha_fallecimiento: victim.fechaFallecimiento || null,
-              },
-            ])
-            .select()
-            .single()
-
-          if (victimError) throw victimError
-
-          // Create CASOS record linking victim_id + hecho_id
-          const { error: casoInsertError } = await supabase.from("casos").insert([
-            {
-              victima_id: victimData.id,
-              hecho_id: hechoId,
-              estado: formData.incident.estadoCaso || "En investigación",
-              estado_general: "En investigación",
-            },
-          ])
-          if (casoInsertError) throw casoInsertError
-
-          // Update hecho with the first victim's ID
-          if (i === 0) {
-            await supabase.from("hechos").update({ victima_id: victimData.id }).eq("id", hechoId)
-          }
-
-          // Insert victim resources
-          if (victim.resources && Array.isArray(victim.resources) && victim.resources.length > 0) {
-            for (const resource of victim.resources) {
-              if (resource.titulo || resource.url || resource.archivo_path) {
-                await supabase.from("recursos").insert([
-                  {
-                    victima_id: victimData.id,
-                    hecho_id: hechoId,
-                    tipo: resource.tipo || null,
-                    titulo: resource.titulo || resource.archivo_nombre || "Sin título",
-                    url: resource.url || null,
-                    fuente: resource.fuente || null,
-                    descripcion: resource.descripcion || null,
-                    archivo_path: resource.archivo_path || null,
-                    archivo_nombre: resource.archivo_nombre || null,
-                    archivo_tipo: resource.archivo_tipo || null,
-                    archivo_size: resource.archivo_size ? Number(resource.archivo_size) : null,
-                  },
-                ])
-              }
-            }
-          }
-        }
-
-        // Step 3: Iterate through ACCUSED array with their JUDICIAL INSTANCES
-        if (formData.accused && Array.isArray(formData.accused) && formData.accused.length > 0) {
-          for (const accused of formData.accused) {
-            if (accused.apellidoNombre) {
-              const { data: accusedData, error: accusedError } = await supabase
-                .from("imputados")
-                .insert([buildImputadoInsert(accused, hechoId)])
-                .select()
-                .single()
-
-              if (accusedError) throw accusedError
-              const accusedId = accusedData.id
-
-              // Insert trial dates
-              if (accused.trialDates && Array.isArray(accused.trialDates)) {
-                for (const fecha of accused.trialDates) {
-                  if (fecha) {
-                    await supabase.from("fechas_juicio").insert([
-                      {
-                        imputado_id: accusedId,
-                        fecha_audiencia: fecha,
-                        hecho_id: hechoId,
-                      },
-                    ])
-                  }
-                }
-              }
-
-              // Insert judicial instances
-              if (accused.instanciasJudiciales && Array.isArray(accused.instanciasJudiciales)) {
-                for (const instancia of accused.instanciasJudiciales) {
-                  const { error: insertError } = await supabase.from("instancias_judiciales").insert([
-                    {
-                      imputado_id: accusedId,
-                      numero_causa: instancia.numeroCausa || null,
-                      fiscal: instancia.fiscalFiscalia || null,
-                      fiscalia: instancia.fiscalFiscalia || null,
-                      caratula: instancia.caratula || null,
-                      orden_nivel: instancia.ordenNivel || null,
-                    },
-                  ])
-
-                  if (insertError) {
-                    console.log("[v0] Error inserting instancia:", insertError)
-                  }
-                }
-              }
-
-              // Insert accused resources
-              if (accused.resources && Array.isArray(accused.resources)) {
-                for (const resource of accused.resources) {
-                  if (resource.url || resource.archivo_path) {
-                    await supabase.from("recursos").insert([
-                      {
-                        imputado_id: accusedId,
-                        hecho_id: hechoId,
-                        tipo: resource.tipo && resource.tipo !== "" ? resource.tipo : "other",
-                        titulo: resource.titulo || resource.archivo_nombre || "Sin título",
-                        url: resource.url || null,
-                        fuente: resource.fuente || null,
-                        descripcion: resource.descripcion || null,
-                        archivo_path: resource.archivo_path || null,
-                        archivo_nombre: resource.archivo_nombre || null,
-                        archivo_tipo: resource.archivo_tipo || null,
-                        archivo_size: resource.archivo_size ? Number(resource.archivo_size) : null,
-                      },
-                    ])
-                  }
-                }
-              }
-            }
-          }
-        }
-
-        // Insert seguimiento
-        if (formData.followUp) {
-          const { error: followUpError } = await supabase.from("seguimiento").insert([
-            {
-              hecho_id: hechoId,
-              primer_contacto: formData.followUp.primerContacto || null,
-              como_llego_caso: formData.followUp.comoLlegoCaso || null,
-              miembro_asignado: formData.followUp.miembroAsignado || null,
-              contacto_familia: formData.followUp.contactoFamiliar || null,
-              telefono_contacto: formData.followUp.telefonoContacto || null,
-              tipo_acompanamiento: formData.followUp.tipoAcompanamiento || null,
-              abogado_querellante: formData.followUp.abogadoQuerellante || null,
-              amicus_curiae: formData.followUp.amicusCuriae || false,
-              notas_seguimiento: formData.followUp.notasSeguimiento || null,
-              email_contacto: formData.followUp.emailContacto || null,
-              direccion_contacto: formData.followUp.direccionContacto || null,
-              telefono_miembro: formData.followUp.telefonoMiembro || null,
-              email_miembro: formData.followUp.emailMiembro || null,
-              fecha_asignacion: formData.followUp.fechaAsignacion || null,
-              proximas_acciones: formData.followUp.proximasAcciones || null,
-              parentesco_contacto: formData.followUp.parentescoContacto || null,
-              parentesco_otro: formData.followUp.parentescoOtro || null,
-              tiene_abogado_querellante: formData.followUp.tieneAbogadoQuerellante || "ns_nc",
-              abogado_usina_amicus: formData.followUp.abogadoUsinaAmicus || null,
-              abogado_amicus_firmante: formData.followUp.abogadoAmicusFirmante || null,
-              lista_miembros_asignados: formData.followUp.listaMiembrosAsignados || null,
-              lista_contactos_familiares: formData.followUp.listaContactosFamiliares || null,
-              datos_abogados_querellantes: formData.followUp.datosAbogadosQuerellantes || null,
-              otra_intervencion: formData.followUp.otraIntervencion || false,
-              otra_intervencion_descripcion: formData.followUp.otraIntervencionDescripcion || null,
-            },
-          ])
-          if (followUpError) throw followUpError
-        }
-
-        // Insert general resources for the fact
-        if (formData.resources && Array.isArray(formData.resources) && formData.resources.length > 0) {
-          for (const resource of formData.resources) {
-            if (resource.titulo || resource.url || resource.archivo_path) {
-              const resourceData = {
-                hecho_id: hechoId,
-                tipo: resource.tipo && resource.tipo !== "" ? resource.tipo : "other",
-                titulo: resource.titulo || resource.archivo_nombre || "Sin título",
-                url: resource.url || null,
-                fuente: resource.fuente || null,
-                descripcion: resource.descripcion || null,
-                archivo_path: resource.archivo_path || null,
-                archivo_nombre: resource.archivo_nombre || null,
-                archivo_tipo: resource.archivo_tipo || null,
-                archivo_size: resource.archivo_size ? Number(resource.archivo_size) : null,
-              }
-              await supabase.from("recursos").insert([resourceData])
-            }
-          }
-        }
-      }
+      const { warnings } = await saveCase({
+        supabase: createClient(),
+        mode,
+        caseId,
+        formData,
+        realIds,
+        resourcesToDelete,
+      })
 
       toast({
         title: mode === "edit" ? "Caso actualizado" : "Caso guardado",
         description:
-          mode === "edit"
-            ? "Los cambios han sido guardados correctamente."
-            : `Se han registrado ${formData.victims.length} víctima(s) correctamente.`,
+          warnings.length > 0
+            ? `Se guardó el caso, pero no se pudo guardar: ${warnings.join(", ")}. Revisá esos datos.`
+            : mode === "edit"
+              ? "Los cambios han sido guardados correctamente."
+              : `Se han registrado ${formData.victims.length} víctima(s) correctamente.`,
+        variant: warnings.length > 0 ? "destructive" : undefined,
       })
 
       // Listados y dashboard quedaron stale tras el insert/update.
@@ -1201,10 +497,9 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
 
       router.push("/casos")
     } catch (error: any) {
-      console.error("Error saving case:", error)
       toast({
         title: "Error",
-        description: error.message || "No se pudo guardar el caso. Verifique la conexión a la base de datos.",
+        description: error?.message || "No se pudo guardar el caso. Verifique la conexión a la base de datos.",
         variant: "destructive",
       })
     } finally {

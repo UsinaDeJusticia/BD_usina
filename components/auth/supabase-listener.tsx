@@ -9,15 +9,10 @@ export function SupabaseListener() {
   const router = useRouter()
 
   useEffect(() => {
-    console.log("SupabaseListener está activo y escuchando...")
-
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Evento de Supabase Auth detectado:", event)
-
+    } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") {
-        console.log("Evento PASSWORD_RECOVERY detectado! Redirigiendo a /update-password...")
         router.push("/update-password")
       }
     })
