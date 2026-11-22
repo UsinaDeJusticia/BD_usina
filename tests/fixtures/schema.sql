@@ -1,10 +1,17 @@
 -- Esquema de prueba: emula Supabase (roles, auth.email(), storage) + tablas
 -- de scripts/001..012 + columnas que la app usa y existen en producción.
 -- Lo usan tests/save-case.test.ts y tests/sql-migrations.test.ts.
-do $$ begin
-  if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
-  if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
-  if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin bypassrls; end if;
+-- Los roles son globales del cluster y varios archivos de tests cargan este
+-- fixture en paralelo: se toleran tanto el "ya existe" como la carrera.
+do $$
+declare r text;
+begin
+  foreach r in array array['anon','authenticated','service_role'] loop
+    begin
+      execute format('create role %I nologin%s', r, case when r = 'service_role' then ' bypassrls' else '' end);
+    exception when duplicate_object or unique_violation then null;
+    end;
+  end loop;
 end $$;
 create schema auth; create schema storage; create schema extensions;
 create function auth.email() returns text language sql stable as $$ select nullif(current_setting('request.jwt.claims', true),'')::jsonb->>'email' $$;
