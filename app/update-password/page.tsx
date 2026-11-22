@@ -80,7 +80,14 @@ export default function UpdatePasswordPage() {
       })
 
       if (updateError) {
-        setError("Error al actualizar la contraseña: " + updateError.message)
+        // No exponer el mensaje interno de Supabase; sí el caso más común.
+        setError(
+          /same|different|reused/i.test(updateError.message)
+            ? "La nueva contraseña debe ser distinta de la anterior."
+            : /weak|pwned|leaked|short|characters/i.test(updateError.message)
+              ? "La contraseña no cumple la política de seguridad. Elegí una más robusta."
+              : "No se pudo actualizar la contraseña. Solicitá un nuevo enlace e intentá otra vez.",
+        )
         return
       }
 

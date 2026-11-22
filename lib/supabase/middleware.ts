@@ -36,8 +36,11 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   // Public routes that don't require authentication
+  // Coincidencia exacta o subruta ("/login/..."). Con `startsWith` a secas,
+  // "/login-cualquier-cosa" también quedaba como pública.
   const publicRoutes = ["/login", "/no-autorizado"]
-  const isPublicRoute = publicRoutes.some((route) => request.nextUrl.pathname.startsWith(route))
+  const pathname = request.nextUrl.pathname
+  const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`))
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone()
@@ -48,7 +51,7 @@ export async function updateSession(request: NextRequest) {
   // Si ya está logueado y va a /login, mandarlo al home. Antes lo hacía
   // `AuthGuard` en el cliente con un re-check de sesión; ahora se decide
   // en el middleware para evitar el doble fetch y el spinner.
-  if (user && request.nextUrl.pathname.startsWith("/login")) {
+  if (user && (pathname === "/login" || pathname.startsWith("/login/"))) {
     const url = request.nextUrl.clone()
     url.pathname = "/"
     return NextResponse.redirect(url)
@@ -79,7 +82,6 @@ export async function updateSession(request: NextRequest) {
         .maybeSingle()
 
       if (error || !allowedUser) {
-        console.log("[v0] User not in whitelist:", email)
         const url = request.nextUrl.clone()
         url.pathname = "/no-autorizado"
         return NextResponse.redirect(url)
