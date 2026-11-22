@@ -182,7 +182,7 @@ export function AccusedForm({ data = [], onChange }: AccusedFormProps) {
       {data.length === 0 ? (
         <div className="text-center py-8 text-slate-500">
           <p>No hay imputados registrados.</p>
-          <p className="text-sm">Haga clic en "Agregar Imputado" para añadir información.</p>
+          <p className="text-sm">Haga clic en &ldquo;Agregar Imputado&rdquo; para añadir información.</p>
         </div>
       ) : (
         <div className="space-y-4">

@@ -40,7 +40,7 @@ const provinceCoordinates: Record<string, { x: number; y: number }> = {
   "San Juan": { x: 38, y: 58 },
 }
 
-const getPointSize = (cases: number) => {
+const _getPointSize = (cases: number) => {
   if (cases > 200) return "w-4 h-4"
   if (cases > 100) return "w-3 h-3"
   if (cases > 50) return "w-2 h-2"
