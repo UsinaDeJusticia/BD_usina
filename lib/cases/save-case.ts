@@ -38,6 +38,8 @@ export interface SaveCaseInput {
 
 export interface SaveCaseResult {
   warnings: string[]
+  /** Casos creados en esta operación (alta de caso o víctima nueva en edición). */
+  createdCasoIds: string[]
 }
 
 export async function saveCase({
@@ -58,6 +60,13 @@ export async function saveCase({
   const insertOrThrow = async (table: string, row: Record<string, unknown>) => {
     const { error } = await supabase.from(table).insert([row])
     if (error) throw error
+  }
+
+  const createdCasoIds: string[] = []
+  const insertCaso = async (row: Record<string, unknown>) => {
+    const { data, error } = await supabase.from("casos").insert([row]).select("id").single()
+    if (error) throw error
+    if (data?.id) createdCasoIds.push(data.id)
   }
 
   // Reemplaza las fechas de juicio de un imputado sin perder las
@@ -164,7 +173,7 @@ export async function saveCase({
             .single()
           if (victimInsertError) throw victimInsertError
 
-          await insertOrThrow("casos", {
+          await insertCaso({
             victima_id: newVictimData.id,
             hecho_id: hechoId,
             estado: formData.incident.estadoCaso || "En investigación",
@@ -321,7 +330,7 @@ export async function saveCase({
         if (victimError) throw victimError
         created.victimaIds.push(victimData.id)
 
-        await insertOrThrow("casos", {
+        await insertCaso({
           victima_id: victimData.id,
           hecho_id: hechoId,
           estado: formData.incident.estadoCaso || "En investigación",
@@ -398,5 +407,5 @@ export async function saveCase({
     throw error
   }
 
-  return { warnings }
+  return { warnings, createdCasoIds }
 }

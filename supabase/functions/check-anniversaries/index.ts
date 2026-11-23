@@ -65,6 +65,7 @@ interface Victima {
 }
 
 interface Anniversary {
+  victimaId: string;
   nombre: string;
   tipo: "cumpleaños" | "fallecimiento";
   años: number;
@@ -84,6 +85,70 @@ function dateInAR(d: Date): { year: number; month: number; day: number } {
   }).format(d); // "YYYY-MM-DD"
   const [y, m, dd] = iso.split("-").map(Number);
   return { year: y, month: m, day: dd };
+}
+
+type Supa = ReturnType<typeof createClient>;
+
+/**
+ * Crea notificaciones en la app (y dispara push vía trigger) para los
+ * aniversarios y audiencias de mañana. Usa crear_notificaciones(), que respeta
+ * las preferencias de cada usuario y evita duplicados con dedupe_key.
+ * Nunca lanza: devuelve un resumen o el error.
+ */
+async function notifyInApp(supabase: Supa, anniversaries: Anniversary[], targetISO: string) {
+  try {
+    let created = 0;
+    for (const a of anniversaries) {
+      const titulo = a.tipo === "fallecimiento"
+        ? `Mañana: ${a.años} año${a.años !== 1 ? "s" : ""} del fallecimiento de ${a.nombre}`
+        : `Mañana: ${a.nombre} cumpliría ${a.años} años`;
+      const { data, error } = await supabase.rpc("crear_notificaciones", {
+        p_tipo: "aniversario",
+        p_titulo: titulo.slice(0, 200),
+        p_cuerpo: "Preaviso para preparar el contenido conmemorativo.",
+        p_url: `/casos/${a.victimaId}`,
+        p_dedupe_key: `aniversario:${a.tipo}:${a.victimaId}:${targetISO}`,
+      });
+      if (error) throw new Error(error.message);
+      created += Number(data ?? 0);
+    }
+
+    // Audiencias de mañana.
+    const { data: fechas, error: fechasError } = await supabase
+      .from("fechas_juicio")
+      .select("id, imputado_id, imputados(apellido_nombre, hecho_id)")
+      .eq("fecha_audiencia", targetISO);
+    if (fechasError) throw new Error(fechasError.message);
+
+    for (const f of (fechas ?? []) as any[]) {
+      const imp = Array.isArray(f.imputados) ? f.imputados[0] : f.imputados;
+      let url = "/casos";
+      if (imp?.hecho_id) {
+        const { data: caso } = await supabase
+          .from("casos")
+          .select("id")
+          .eq("hecho_id", imp.hecho_id)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (caso?.id) url = `/casos/${caso.id}`;
+      }
+      const { data, error } = await supabase.rpc("crear_notificaciones", {
+        p_tipo: "audiencia",
+        p_titulo: `Mañana: audiencia de ${imp?.apellido_nombre || "un imputado"}`.slice(0, 200),
+        p_cuerpo: null,
+        p_url: url,
+        p_dedupe_key: `audiencia:${f.id}:${targetISO}`,
+      });
+      if (error) throw new Error(error.message);
+      created += Number(data ?? 0);
+    }
+    return { ok: true, created };
+  } catch (err) {
+    // Antes de aplicar 016 la RPC no existe: no es un error del email.
+    console.error("check-anniversaries: notificaciones en la app fallaron:", err instanceof Error ? err.message : err);
+    return { ok: false };
+  }
 }
 
 Deno.serve(async (req) => {
@@ -123,6 +188,9 @@ Deno.serve(async (req) => {
     const { year: targetYear, month: targetMonth, day: targetDay } =
       dateInAR(tomorrow);
 
+    // Target date como string ISO ("YYYY-MM-DD") para el response y logging.
+    const targetISO = `${targetYear}-${String(targetMonth).padStart(2, "0")}-${String(targetDay).padStart(2, "0")}`;
+
     // 1. Traer víctimas con al menos una fecha cargada.
     const { data: victimas, error } = await supabase
       .from("victimas")
@@ -133,17 +201,10 @@ Deno.serve(async (req) => {
       throw new Error(`Error fetching victims: ${error.message}`);
     }
 
-    if (!victimas || victimas.length === 0) {
-      return new Response(
-        JSON.stringify({ message: "No victims with dates found" }),
-        { headers: jsonHeaders },
-      );
-    }
-
     // 2. Filtrar las que caen MAÑANA (day+month).
     const anniversaries: Anniversary[] = [];
 
-    for (const victima of victimas as Victima[]) {
+    for (const victima of (victimas ?? []) as Victima[]) {
       const checkDate = (raw: string | null, tipo: Anniversary["tipo"]) => {
         if (!raw) return;
         const parts = raw.split("-");
@@ -153,6 +214,7 @@ Deno.serve(async (req) => {
         const d = parseInt(parts[2]);
         if (d !== targetDay || m !== targetMonth) return;
         anniversaries.push({
+          victimaId: victima.id,
           nombre: victima.nombre_completo || "Sin nombre",
           tipo,
           años: targetYear - y,
@@ -163,12 +225,20 @@ Deno.serve(async (req) => {
       checkDate(victima.fecha_fallecimiento, "fallecimiento");
     }
 
-    // Target date como string ISO ("YYYY-MM-DD") para el response y logging.
-    const targetISO = `${targetYear}-${String(targetMonth).padStart(2, "0")}-${String(targetDay).padStart(2, "0")}`;
+    // Notificaciones en la app + push (scripts/016). Independiente del email:
+    // si falla, se registra y el email sale igual.
+    const inApp = await notifyInApp(supabase, anniversaries, targetISO);
+
+    if (!victimas || victimas.length === 0) {
+      return new Response(
+        JSON.stringify({ message: "No victims with dates found", notifications: inApp }),
+        { headers: jsonHeaders },
+      );
+    }
 
     if (anniversaries.length === 0) {
       return new Response(
-        JSON.stringify({ message: "No anniversaries tomorrow", date: targetISO }),
+        JSON.stringify({ message: "No anniversaries tomorrow", date: targetISO, notifications: inApp }),
         { headers: jsonHeaders },
       );
     }
@@ -235,6 +305,7 @@ Deno.serve(async (req) => {
         success: true,
         message: `Email sent with ${anniversaries.length} anniversary(ies) for ${targetISO}`,
         emailId: emailData?.id,
+        notifications: inApp,
       }),
       { headers: jsonHeaders },
     );

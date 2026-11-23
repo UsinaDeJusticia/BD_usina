@@ -15,7 +15,6 @@ let admin: Client
 let db: Client
 let fake: ReturnType<typeof createPgSupabase>
 
-const uuid = () => crypto.randomUUID()
 const count = async (table: string) => Number((await db.query(`select count(*) from public.${table}`)).rows[0].count)
 
 const victim = (over: Record<string, unknown> = {}) => ({
@@ -108,8 +107,10 @@ run("saveCase (Postgres real)", () => {
   })
 
   it("create: guarda el caso completo, incluidos recursos sin tipo", async () => {
-    const { warnings } = await create(fullForm())
+    const { warnings, createdCasoIds } = await create(fullForm())
     expect(warnings).toEqual([])
+    const casoIds = (await db.query("select id from casos order by created_at")).rows.map((r: any) => r.id)
+    expect([...createdCasoIds].sort()).toEqual([...casoIds].sort())
     expect(await count("hechos")).toBe(1)
     expect(await count("victimas")).toBe(2)
     expect(await count("casos")).toBe(2)

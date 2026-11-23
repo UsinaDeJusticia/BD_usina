@@ -20,6 +20,8 @@ const cspDirectives = [
   // Preview de PDFs/videos: /api/files redirige a un signed URL de Supabase.
   `frame-src 'self' ${supabaseUrl}`,
   `media-src 'self' blob: ${supabaseUrl}`,
+  "worker-src 'self'",
+  "manifest-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -91,6 +93,15 @@ const nextConfig = {
         // Aplica a todas las rutas.
         source: "/(.*)",
         headers: securityHeaders,
+      },
+      {
+        // El service worker no se cachea en el navegador: así cada deploy
+        // nuevo se toma en la próxima visita.
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+        ],
       },
     ]
   },
