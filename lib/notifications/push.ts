@@ -43,14 +43,27 @@ async function getRegistration() {
   return (await navigator.serviceWorker.getRegistration("/")) ?? (await navigator.serviceWorker.register("/sw.js"))
 }
 
-export async function getPushStatus(): Promise<PushStatus> {
+/**
+ * Estado del push en este dispositivo PARA EL USUARIO ACTUAL. La suscripción
+ * del navegador es una sola por origen: si la activó otra persona que usó
+ * esta computadora, para el usuario actual cuenta como "off" (al activarla,
+ * registrar_push() la reasigna). Se verifica contra push_suscripciones, que
+ * por RLS sólo muestra las filas propias.
+ */
+export async function getPushStatus(supabase: SupabaseClient): Promise<PushStatus> {
   if (typeof window === "undefined") return "unsupported"
   if (!isPushSupported()) return isIOS() && !isStandalone() ? "needs-install" : "unsupported"
   if (!VAPID_PUBLIC_KEY) return "not-configured"
   if (Notification.permission === "denied") return "denied"
   const reg = await navigator.serviceWorker.getRegistration("/")
   const sub = await reg?.pushManager.getSubscription()
-  return sub ? "on" : "off"
+  if (!sub) return "off"
+  const { data, error } = await supabase
+    .from("push_suscripciones")
+    .select("id")
+    .eq("endpoint", sub.endpoint)
+    .maybeSingle()
+  return !error && data ? "on" : "off"
 }
 
 export async function subscribePush(supabase: SupabaseClient): Promise<PushStatus> {
@@ -82,6 +95,26 @@ export async function subscribePush(supabase: SupabaseClient): Promise<PushStatu
     throw error
   }
   return "on"
+}
+
+/**
+ * Al cerrar sesión: si este dispositivo recibe push para el usuario que se
+ * va, se da de baja, para que en una computadora compartida no le sigan
+ * llegando sus notificaciones al próximo que la use. Nunca lanza.
+ */
+export async function releasePushOnSignOut(supabase: SupabaseClient): Promise<void> {
+  try {
+    if (!isPushSupported()) return
+    const reg = await navigator.serviceWorker.getRegistration("/")
+    const sub = await reg?.pushManager.getSubscription()
+    if (!sub) return
+    const { data } = await supabase.from("push_suscripciones").select("id").eq("endpoint", sub.endpoint).maybeSingle()
+    if (!data) return // es de otra persona o no está registrada: no tocar
+    await supabase.from("push_suscripciones").delete().eq("endpoint", sub.endpoint)
+    await sub.unsubscribe()
+  } catch {
+    // no bloquear el logout
+  }
 }
 
 export async function unsubscribePush(supabase: SupabaseClient): Promise<PushStatus> {

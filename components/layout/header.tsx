@@ -7,12 +7,16 @@ import { LogOut, BarChart3 } from "lucide-react"
 import Image from "next/image"
 import { createClient } from "@/lib/supabase/client"
 import { NotificationBell } from "@/components/notifications/notification-bell"
+import { releasePushOnSignOut } from "@/lib/notifications/push"
 
 export function Header() {
   const pathname = usePathname()
   const supabase = createClient()
 
   const handleLogout = async () => {
+    // Antes del signOut: con la sesión todavía activa, RLS permite borrar la
+    // suscripción propia de este dispositivo.
+    await releasePushOnSignOut(supabase)
     await supabase.auth.signOut()
     window.location.href = "/login"
   }

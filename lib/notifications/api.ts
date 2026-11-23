@@ -36,6 +36,16 @@ export async function fetchNotificaciones(supabase: SupabaseClient, limit = PAGE
   return (data ?? []) as Notificacion[]
 }
 
+/** Cantidad real de no leídas (no depende de cuántas se hayan cargado). */
+export async function contarNoLeidas(supabase: SupabaseClient): Promise<number> {
+  const { count, error } = await supabase
+    .from("notificaciones")
+    .select("id", { count: "exact", head: true })
+    .is("leida_at", null)
+  if (error) throw error
+  return count ?? 0
+}
+
 export async function marcarLeida(supabase: SupabaseClient, id: string) {
   const { error } = await supabase
     .from("notificaciones")

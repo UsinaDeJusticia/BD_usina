@@ -15,6 +15,7 @@ import { queryKeys } from "@/lib/queries/keys"
 import { useNotificaciones } from "@/lib/notifications/use-notificaciones"
 import {
   DEFAULT_PREFS,
+  PAGE_SIZE,
   enviarPrueba,
   fetchPreferencias,
   guardarPreferencias,
@@ -47,7 +48,8 @@ export default function NotificacionesPage() {
   const supabase = useMemo(() => createClient(), [])
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const { items, unread, query, markRead, markAllRead, remove, refresh } = useNotificaciones()
+  const [limit, setLimit] = useState(PAGE_SIZE)
+  const { items, unread, hasMore, query, markRead, markAllRead, remove, refresh } = useNotificaciones({ limit })
 
   const [email, setEmail] = useState<string | null>(null)
   const [pushStatus, setPushStatus] = useState<PushStatus | null>(null)
@@ -56,7 +58,7 @@ export default function NotificacionesPage() {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null))
-    getPushStatus().then(setPushStatus).catch(() => setPushStatus("unsupported"))
+    getPushStatus(supabase).then(setPushStatus).catch(() => setPushStatus("unsupported"))
   }, [supabase])
 
   const prefsQuery = useQuery({
@@ -201,11 +203,21 @@ export default function NotificacionesPage() {
                 <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
               </div>
             ) : (
-              <NotificationList
-                items={items}
-                onOpen={(n) => !n.leida_at && markRead.mutate(n.id)}
-                onDelete={(n) => remove.mutate(n.id)}
-              />
+              <>
+                <NotificationList
+                  items={items}
+                  onOpen={(n) => !n.leida_at && markRead.mutate(n.id)}
+                  onDelete={(n) => remove.mutate(n.id)}
+                />
+                {hasMore && (
+                  <div className="border-t border-slate-100 p-3 text-center">
+                    <Button variant="ghost" size="sm" onClick={() => setLimit((l) => l + PAGE_SIZE)} disabled={query.isFetching}>
+                      {query.isFetching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Cargar más
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>

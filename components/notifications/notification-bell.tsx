@@ -8,7 +8,7 @@ import { NotificationList } from "./notification-list"
 
 /** Campanita del header con contador de no leídas y panel desplegable. */
 export function NotificationBell() {
-  const { items, unread, markRead, markAllRead, query } = useNotificaciones()
+  const { items, unread, markRead, markAllRead, query } = useNotificaciones({ limit: 10 })
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -80,7 +80,7 @@ export function NotificationBell() {
           <div className="max-h-[calc(75vh-96px)] overflow-y-auto">
             <NotificationList
               compact
-              items={items.slice(0, 10)}
+              items={items}
               onOpen={(n) => {
                 if (!n.leida_at) markRead.mutate(n.id)
                 setOpen(false)
