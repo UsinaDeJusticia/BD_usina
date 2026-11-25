@@ -2,7 +2,7 @@ name: Migraciones a producción
 
 # Aplica en producción las migraciones nuevas de supabase/migrations cuando
 # llegan a main. Siempre espera la aprobación manual del environment
-# "production" (GitHub → Settings → Environments → production → Required
+# "db-production" (GitHub → Settings → Environments → db-production → Required
 # reviewers). Ver docs/migraciones.md.
 
 on:
@@ -28,7 +28,7 @@ jobs:
     if: vars.DB_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: production
+    environment: db-production
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}

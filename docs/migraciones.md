@@ -53,10 +53,11 @@ esperando aprobación. Quien aprueba ve el listado de migraciones pendientes
 
 En GitHub → Settings del repo:
 
-1. **Environments → New environment → `production`:**
+1. **Environments → New environment → `db-production`:**
+   (no usar `Production`/`Preview`: los crea Vercel para sus deploys)
    - Required reviewers: las personas que pueden aprobar cambios de base.
    - Deployment branches: solo `main`.
-2. **Secrets → Actions** (en el environment `production`):
+2. **Secrets → Actions** (en el environment `db-production`):
    - `SUPABASE_ACCESS_TOKEN`: token personal de Supabase (Account → Access Tokens).
    - `SUPABASE_DB_PASSWORD`: contraseña de la base de producción.
 3. **Variables → Actions:** `DB_DEPLOY_ENABLED` = `true`.
