@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useCountries } from "@/hooks/use-countries"
 import { useArgentinaGeo } from "@/hooks/use-argentina-geo"
 import { Loader2 } from "lucide-react"
+import { VictimPhotoPicker } from "@/components/victims/victim-photo-picker"
 
 interface VictimFormProps {
   data: any
@@ -80,6 +81,14 @@ export function VictimForm({ data, onChange, showDates = false }: VictimFormProp
       <div>
         <h3 className="text-lg font-semibold text-slate-900 font-heading mb-4">Datos Personales de la Víctima</h3>
 
+        <div className="flex flex-col gap-6 md:flex-row md:items-start">
+        <VictimPhotoPicker
+          name={data.nombreCompleto || ""}
+          fotoPath={data.fotoPath}
+          resources={data.resources || []}
+          onChange={(fotoPath) => onChange({ ...data, fotoPath })}
+        />
+        <div className="min-w-0 flex-1">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="victimName" className="text-sm font-medium text-slate-700">
@@ -247,6 +256,8 @@ export function VictimForm({ data, onChange, showDates = false }: VictimFormProp
               </Select>
             </div>
           </div>
+        </div>
+        </div>
         </div>
 
         <div className="mt-4 space-y-2">

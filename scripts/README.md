@@ -22,6 +22,7 @@ aplicó y qué falta. **Actualizalo cada vez que corras un script en producción
 | `014_cron_secret.sql` | Secreto compartido cron → edge function | Aplicado (2026-11-22); confirmar la corrida del 23/11 15:00 UTC |
 | `015_data_integrity.sql` | `delete_caso()` con snapshot, CHECK de URLs, límites del bucket | Aplicado (2026-11-22) |
 | `016_notifications.sql` | Notificaciones en la app + Web Push (tablas, RPCs, trigger hacia `send-push`) | **Pendiente** (ver `docs/opencode-prompt-3.md`) |
+| `017_victim_photo.sql` | Columna `victimas.foto_path` (foto de perfil). Aditiva: se puede aplicar antes o después del deploy | Aplicado (2026-11-25) |
 
 Los pasos completos y el orden recomendado están en `docs/security-hardening.md`.
 

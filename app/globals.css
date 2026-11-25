@@ -226,3 +226,21 @@
     width: 30px;
   }
 }
+
+/* Fotos de perfil de víctimas: desvanecido hacia el fondo (diseño aprobado). */
+.victim-photo-fade {
+  -webkit-mask-image: linear-gradient(to bottom, #000 50%, rgba(0, 0, 0, 0.6) 72%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 50%, rgba(0, 0, 0, 0.6) 72%, transparent 100%);
+}
+.victim-photo-hero {
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+}
+@media (min-width: 640px) {
+  .victim-photo-hero {
+    -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%), linear-gradient(to right, #000 60%, transparent 100%);
+    -webkit-mask-composite: source-in;
+    mask-image: linear-gradient(to bottom, #000 55%, transparent 100%), linear-gradient(to right, #000 60%, transparent 100%);
+    mask-composite: intersect;
+  }
+}

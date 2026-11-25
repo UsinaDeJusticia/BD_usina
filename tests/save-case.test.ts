@@ -89,6 +89,10 @@ run("saveCase (Postgres real)", () => {
     db = new Client({ connectionString: url.toString() })
     await db.connect()
     await db.query(readFileSync(new URL("./fixtures/schema.sql", import.meta.url), "utf8"))
+    // Foto de perfil (scripts/017), dos veces: tiene que ser re-ejecutable.
+    const sql017 = readFileSync(new URL("../scripts/017_victim_photo.sql", import.meta.url), "utf8")
+    await db.query(sql017)
+    await db.query(sql017)
   })
 
   afterAll(async () => {
@@ -287,6 +291,39 @@ run("saveCase (Postgres real)", () => {
       // El resto del caso se guardó.
       expect((await db.query("select provincia from hechos")).rows[0].provincia).toBe("Córdoba")
       await db.query(`alter table recursos drop constraint recursos_url_http_check`)
+    })
+
+    it("foto de perfil: se conserva si el form no la toca, se cambia y se quita", async () => {
+      const s = await seedAndLoad()
+      const vid = s.v[0].id
+      await db.query("update victimas set foto_path = 'fotos-perfil/original.jpg' where id = $1", [vid])
+      const fotoDe = async () => (await db.query("select foto_path from victimas where id = $1", [vid])).rows[0].foto_path
+
+      // Form sin fotoPath (p.ej. versión vieja de la app): NO se pierde.
+      await edit(s, editForm(s))
+      expect(await fotoDe()).toBe("fotos-perfil/original.jpg")
+
+      // Foto nueva.
+      const conFoto = editForm(s)
+      ;(conFoto.victims[0] as any).fotoPath = "fotos-perfil/nueva.jpg"
+      await edit(s, conFoto)
+      expect(await fotoDe()).toBe("fotos-perfil/nueva.jpg")
+
+      // Quitar foto.
+      const sinFoto = editForm(s)
+      ;(sinFoto.victims[0] as any).fotoPath = null
+      await edit(s, sinFoto)
+      expect(await fotoDe()).toBeNull()
+    })
+
+    it("017: sólo acepta rutas de fotos de perfil", async () => {
+      const s = await seedAndLoad()
+      await expect(
+        db.query("update victimas set foto_path = 'casos/otro/archivo.pdf' where id = $1", [s.v[0].id]),
+      ).rejects.toThrow(/victimas_foto_path_check/)
+      await expect(
+        db.query("update victimas set foto_path = 'fotos-perfil/../casos/x.pdf' where id = $1", [s.v[0].id]),
+      ).rejects.toThrow(/victimas_foto_path_check/)
     })
 
     it("ficha vieja sin hecho: guarda la víctima y avisa", async () => {

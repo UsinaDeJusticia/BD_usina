@@ -2,92 +2,13 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { MapPin, User, Loader2, ChevronLeft, ChevronRight, ArrowLeft, Phone, Users } from "lucide-react"
+import { Loader2, ChevronLeft, ChevronRight, ArrowLeft } from "lucide-react"
 import { CasesFilters } from "@/components/cases/cases-filters"
 import { type CaseListItem } from "@/lib/data/casos"
 import { useCasesList } from "@/lib/queries/casos"
-
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "En investigación":
-      return "bg-yellow-100 text-yellow-800 border-yellow-200"
-    case "Imputado identificado":
-      return "bg-blue-100 text-blue-800 border-blue-200"
-    case "Procesado":
-      return "bg-orange-100 text-orange-800 border-orange-200"
-    case "Juicio oral":
-      return "bg-purple-100 text-purple-800 border-purple-200"
-    case "Condenado":
-      return "bg-green-100 text-green-800 border-green-200"
-    case "Absuelto":
-      return "bg-gray-100 text-gray-800 border-gray-200"
-    case "Sobreseído":
-      return "bg-slate-100 text-slate-800 border-slate-200"
-    case "Archivo":
-      return "bg-red-100 text-red-800 border-red-200"
-    case "Prescripción":
-      return "bg-purple-100 text-purple-800 border-purple-200"
-    default:
-      return "bg-gray-100 text-gray-800 border-gray-200"
-  }
-}
-
-interface CaseCardProps {
-  case: CaseListItem
-}
-
-function CaseCard({ case: caseData }: CaseCardProps) {
-  return (
-    <Link href={`/casos/${caseData.id}`}>
-      <Card className="hover:shadow-lg transition-all duration-300 border-slate-200 hover:border-blue-300 cursor-pointer hover:scale-105">
-        <CardContent className="p-6">
-          <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold text-lg text-slate-900 font-heading mb-2 line-clamp-2">
-                {caseData.victimName}
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                <Badge className={`text-xs ${getStatusColor(caseData.status)}`}>{caseData.status}</Badge>
-                {caseData.totalVictimsInHecho > 1 && (
-                  <Badge variant="outline" className="text-xs flex items-center gap-1">
-                    <Users className="w-3 h-3" />
-                    {caseData.totalVictimsInHecho} víctimas
-                  </Badge>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-2 text-sm text-slate-600">
-              <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-blue-600" />
-                <span className="line-clamp-1">
-                  {caseData.municipio}, {caseData.provincia}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <User className="w-4 h-4 text-blue-600" />
-                <span className="line-clamp-1">
-                  {caseData.familyContactName} {caseData.familyRelationship ? `- ${caseData.familyRelationship}` : ""}
-                </span>
-              </div>
-
-              {caseData.familyContactPhone && caseData.familyContactPhone !== "No especificado" && (
-                <div className="flex items-center gap-2">
-                  <Phone className="w-4 h-4 text-blue-600" />
-                  <span className="line-clamp-1 font-mono text-xs">{caseData.familyContactPhone}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
-  )
-}
+import { usePhotoUrls } from "@/lib/photos/use-photo-urls"
+import { CasePhotoCard } from "@/components/cases/case-photo-card"
 
 export default function CasosPage() {
   const { data: cases = [], isLoading, error, refetch } = useCasesList()
@@ -154,6 +75,8 @@ export default function CasosPage() {
   const startIndex = (currentPage - 1) * casesPerPage
   const endIndex = startIndex + casesPerPage
   const currentCases = filteredCases.slice(startIndex, endIndex)
+  // Sólo se firman las fotos de la página visible (un request).
+  const photoUrls = usePhotoUrls(currentCases.map((c) => c.photoPath))
 
   const goToPage = (page: number) => {
     setCurrentPage(Math.max(1, Math.min(page, totalPages)))
@@ -233,9 +156,13 @@ export default function CasosPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
+          <div className="mb-10 grid grid-cols-1 gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {currentCases.map((caseData) => (
-              <CaseCard key={caseData.id} case={caseData} />
+              <CasePhotoCard
+                key={caseData.id}
+                caseData={caseData}
+                photoUrl={caseData.photoPath ? photoUrls[caseData.photoPath] : null}
+              />
             ))}
           </div>
 

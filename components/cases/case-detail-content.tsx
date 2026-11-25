@@ -16,7 +16,6 @@ import {
   ExternalLink,
   AlertTriangle,
   Loader2,
-  Users,
   Gavel,
   Building,
   Heart,
@@ -47,6 +46,9 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { FilePreviewDialog } from "@/components/ui/file-preview-dialog"
 import { formatDateUTC } from "@/lib/utils"
+import { usePhotoUrls } from "@/lib/photos/use-photo-urls"
+import { VictimPhoto } from "@/components/victims/victim-photo"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { safeExternalUrl } from "@/lib/url"
 import { useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/lib/queries/keys"
@@ -58,6 +60,7 @@ interface CaseDetailContentProps {
 interface Victima {
   id: string
   nombre_completo: string | null
+  foto_path?: string | null
   edad: number | null
   fecha_nacimiento: string | null
   profesion: string | null
@@ -158,6 +161,7 @@ interface HermanoHecho {
   caso_id: string
   victima_id: string
   victima_nombre: string | null
+  victima_foto_path: string | null
 }
 
 interface CaseData {
@@ -337,6 +341,11 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [isDeleting, setIsDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [photoOpen, setPhotoOpen] = useState(false)
+  const photoUrls = usePhotoUrls([
+    caseData?.victima?.foto_path,
+    ...(caseData?.hermanos_hecho ?? []).map((h) => h.victima_foto_path),
+  ])
   const router = useRouter()
   const supabase = createClient()
   const queryClient = useQueryClient()
@@ -479,7 +488,9 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
         hechoId && victimaId
           ? supabase
               .from("casos")
-              .select("id, victima_id, victimas(nombre_completo)")
+              // victimas(*) y no una lista de columnas: funciona con o sin la
+              // columna foto_path (scripts/017).
+              .select("id, victima_id, victimas(*)")
               .eq("hecho_id", hechoId)
               .neq("victima_id", victimaId)
           : Promise.resolve({ data: [] as any[] }),
@@ -500,6 +511,7 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
         caso_id: c.id,
         victima_id: c.victima_id,
         victima_nombre: c.victimas?.nombre_completo || "Sin nombre",
+        victima_foto_path: c.victimas?.foto_path ?? null,
       }),
     )
 
@@ -600,38 +612,30 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
 
   const { victima, hecho, imputados, seguimiento, recursos, hermanos_hecho, estado_general, estado } = caseData
 
+  const victimName = victima.nombre_completo || "Víctima sin nombre"
+  const victimPhotoUrl = victima.foto_path ? photoUrls[victima.foto_path] : null
+  const heroFacts = [
+    victima.edad ? `${victima.edad} años` : null,
+    [hecho?.municipio, hecho?.provincia].filter(Boolean).join(", ") || null,
+    hecho?.fecha_hecho ? formatDateUTC(hecho.fecha_hecho) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+
   const getVictimResources = () => recursos.filter((r) => r.victima_id === victima.id && !r.imputado_id)
   const getImputadoResources = (imputadoId: string) => recursos.filter((r) => r.imputado_id === imputadoId)
   const getGeneralResources = () => recursos.filter((r) => !r.victima_id && !r.imputado_id)
 
   return (
     <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header with actions */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-        <div className="flex items-center gap-4">
-          <Link href="/casos">
-            <Button variant="outline" size="sm" className="flex items-center gap-2 bg-transparent">
-              <ArrowLeft className="w-4 h-4" />
-              Volver
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">{victima.nombre_completo || "Víctima sin nombre"}</h1>
-            <div className="flex items-center gap-2 mt-1">
-              {(estado || estado_general) && (
-                <Badge className={`text-xs ${getStatusColor(estado || estado_general || "")}`}>
-                  {estado || estado_general}
-                </Badge>
-              )}
-              {hecho?.tipo_crimen && (
-                <Badge variant="outline" className="text-xs">
-                  {hecho.tipo_crimen}
-                </Badge>
-              )}
-            </div>
-          </div>
-        </div>
-
+      {/* Encabezado: acciones */}
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <Link href="/casos">
+          <Button variant="outline" size="sm" className="flex items-center gap-2 bg-white">
+            <ArrowLeft className="w-4 h-4" />
+            Volver
+          </Button>
+        </Link>
         <div className="flex gap-2">
           <Link href={`/casos/${caseId}/editar`}>
             <Button className="bg-slate-800 hover:bg-slate-700 flex items-center gap-2">
@@ -668,31 +672,68 @@ export function CaseDetailContent({ caseId }: CaseDetailContentProps) {
         </div>
       </div>
 
-      {hermanos_hecho.length > 0 && (
-        <Card className="border-amber-200 bg-amber-50 mb-6">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-amber-800 text-base">
-              <Users className="w-5 h-5" />
-              Otras Víctimas de este Hecho ({hermanos_hecho.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
+      {/* Encabezado: foto desvanecida + nombre (diseño aprobado) */}
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-end">
+        {victimPhotoUrl ? (
+          <button
+            type="button"
+            onClick={() => setPhotoOpen(true)}
+            className="w-full shrink-0 cursor-zoom-in self-start rounded-t-[18px] outline-offset-4 focus-visible:outline-2 focus-visible:outline-blue-900 sm:w-auto sm:rounded-tr-none"
+            aria-label="Ver la foto en grande"
+          >
+            <VictimPhoto name={victimName} url={victimPhotoUrl} variant="hero" />
+          </button>
+        ) : (
+          <VictimPhoto name={victimName} url={null} variant="hero" className="self-start" />
+        )}
+        <div className="relative -mt-16 flex flex-col gap-3 px-1 pb-2 sm:-ml-16 sm:mt-0 sm:pb-9">
+          <h1 className="m-0 font-heading text-3xl font-bold leading-tight text-slate-900 sm:text-[40px]">{victimName}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            {(estado || estado_general) && (
+              <span className={`rounded-full px-2.5 py-0.5 text-[13px] ${getStatusColor(estado || estado_general || "")}`}>
+                {estado || estado_general}
+              </span>
+            )}
+            {hecho?.tipo_crimen && (
+              <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-[13px] text-slate-700">{hecho.tipo_crimen}</span>
+            )}
+          </div>
+          {heroFacts && <p className="m-0 text-[15px] text-slate-600">{heroFacts}</p>}
+          {hermanos_hecho.length > 0 && (
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <span className="text-[13px] font-bold text-amber-800">
+                Otras víctimas del hecho ({hermanos_hecho.length}):
+              </span>
               {hermanos_hecho.map((hermano) => (
-                <Link key={hermano.caso_id} href={`/casos/${hermano.caso_id}`}>
-                  <Badge
-                    variant="outline"
-                    className="cursor-pointer hover:bg-amber-100 border-amber-300 text-amber-800"
-                  >
-                    <User className="w-3 h-3 mr-1" />
-                    {hermano.victima_nombre}
-                  </Badge>
+                <Link
+                  key={hermano.caso_id}
+                  href={`/casos/${hermano.caso_id}`}
+                  className="flex items-center gap-2 rounded-full text-sm text-slate-900 hover:text-blue-900 hover:underline"
+                >
+                  <VictimPhoto
+                    name={hermano.victima_nombre || "Sin nombre"}
+                    url={hermano.victima_foto_path ? photoUrls[hermano.victima_foto_path] : null}
+                    variant="avatar"
+                    size={28}
+                  />
+                  {hermano.victima_nombre}
                 </Link>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </div>
+      </div>
+
+      <Dialog open={photoOpen} onOpenChange={setPhotoOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{victimName}</DialogTitle>
+          </DialogHeader>
+          {victimPhotoUrl && (
+            <img src={victimPhotoUrl} alt={`Foto de ${victimName}`} className="w-full rounded-lg object-cover" />
+          )}
+        </DialogContent>
+      </Dialog>
 
       <div className="space-y-6">
         {/* Victim Information */}
