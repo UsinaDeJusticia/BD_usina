@@ -1,8 +1,12 @@
-# Scripts SQL
+# Scripts SQL (histórico)
 
-Los scripts se ejecutan **a mano** en el SQL Editor de Supabase, en orden.
-No hay herramienta de migraciones: este archivo es el registro de qué se
-aplicó y qué falta. **Actualizalo cada vez que corras un script en producción.**
+> **Desde el 26/11/2026 los cambios de base van en `supabase/migrations/`**
+> (ver `docs/migraciones.md`). No agregues scripts nuevos acá: esta carpeta
+> queda como registro de lo que se aplicó a mano antes de las migraciones.
+> El esquema base (`20261126000000_baseline_produccion.sql`) ya incluye todo lo
+> de esta tabla que figura como aplicado.
+
+Los scripts se ejecutaban **a mano** en el SQL Editor de Supabase, en orden.
 
 | Script | Qué hace | Estado en producción |
 |---|---|---|

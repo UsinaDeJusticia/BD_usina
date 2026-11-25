@@ -1,0 +1,50 @@
+name: Migraciones a producción
+
+# Aplica en producción las migraciones nuevas de supabase/migrations cuando
+# llegan a main. Siempre espera la aprobación manual del environment
+# "production" (GitHub → Settings → Environments → production → Required
+# reviewers). Ver docs/migraciones.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Nunca dos despliegues de base a la vez.
+concurrency:
+  group: db-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Seguro extra: hasta que la variable DB_DEPLOY_ENABLED sea "true" (se activa
+    # DESPUÉS de configurar los revisores obligatorios del environment) el job no
+    # corre. Así un environment sin protección nunca aplica cambios solo.
+    if: vars.DB_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: cvxlbhykhvefufikspsm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.122.1
+
+      - name: Vincular el proyecto
+        run: supabase link --project-ref "$PROJECT_REF"
+
+      - name: Migraciones pendientes (sin aplicar)
+        run: supabase db push --dry-run
+
+      - name: Aplicar migraciones
+        run: supabase db push

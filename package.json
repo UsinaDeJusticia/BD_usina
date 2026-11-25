@@ -8,7 +8,12 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "db:new": "supabase migration new",
+    "db:types": "supabase gen types typescript --local > lib/types/supabase.ts"
   },
   "overrides": {
     "@types/react": "^19.0.2",
@@ -55,6 +60,7 @@
     "eslint-config-next": "^15.5.29",
     "pg": "^8.23.1",
     "postcss": "^8.5.10",
+    "supabase": "^2.122.1",
     "tailwindcss": "^4.1.9",
     "typescript": "^5",
     "vitest": "^3.2.7"
