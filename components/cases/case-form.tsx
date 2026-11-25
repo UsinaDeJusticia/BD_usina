@@ -185,6 +185,8 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
                 municipioResidencia: v.municipio_residencia || "",
                 fechaHecho: v.fecha_hecho || "",
                 fechaFallecimiento: v.fecha_fallecimiento || "",
+                // undefined si la base todavía no tiene la columna (017): así no se escribe.
+                fotoPath: v.foto_path,
                 resources: (victimResources || []).map((r: any) => ({
                   id: r.id,
                   tipo: r.tipo || "",
@@ -240,6 +242,7 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
             municipioResidencia: victimData.municipio_residencia || "",
             fechaHecho: victimData.fecha_hecho || "",
             fechaFallecimiento: victimData.fecha_fallecimiento || "",
+            fotoPath: victimData.foto_path,
             resources: (victimResources || []).map((r: any) => ({
               id: r.id,
               tipo: r.tipo || "",

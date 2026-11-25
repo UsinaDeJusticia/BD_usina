@@ -7,39 +7,18 @@ import { Badge } from "@/components/ui/badge"
 import { MapPin, User, Loader2, Users } from "lucide-react"
 import { type CaseListItem } from "@/lib/data/casos"
 import { useCasesList } from "@/lib/queries/casos"
+import { getStatusColor } from "@/lib/cases/status"
+import { usePhotoUrls } from "@/lib/photos/use-photo-urls"
+import { VictimPhoto } from "@/components/victims/victim-photo"
 
 type CaseData = CaseListItem
 
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "En investigación":
-      return "bg-yellow-100 text-yellow-800 border-yellow-200"
-    case "Imputado identificado":
-      return "bg-blue-100 text-blue-800 border-blue-200"
-    case "Procesado":
-      return "bg-orange-100 text-orange-800 border-orange-200"
-    case "Juicio oral":
-      return "bg-purple-100 text-purple-800 border-purple-200"
-    case "Condenado":
-      return "bg-green-100 text-green-800 border-green-200"
-    case "Absuelto":
-      return "bg-gray-100 text-gray-800 border-gray-200"
-    case "Sobreseído":
-      return "bg-slate-100 text-slate-800 border-slate-200"
-    case "Archivo":
-      return "bg-red-100 text-red-800 border-red-200"
-    case "Prescripción":
-      return "bg-purple-100 text-purple-800 border-purple-200"
-    default:
-      return "bg-gray-100 text-gray-800 border-gray-200"
-  }
-}
-
 interface CaseCardProps {
   case: CaseData
+  photoUrl?: string | null
 }
 
-function CaseCard({ case: caseData }: CaseCardProps) {
+function CaseCard({ case: caseData, photoUrl }: CaseCardProps) {
   // `content-visibility: auto` + `contain-intrinsic-size` evitan
   // pintar y layoutear las cards que están fuera del viewport mientras
   // el marquee las arrastra (la mayoría del tiempo).
@@ -48,11 +27,14 @@ function CaseCard({ case: caseData }: CaseCardProps) {
       <Card className="w-80 flex-shrink-0 hover:shadow-lg transition-all duration-300 border-slate-200 hover:border-blue-300 cursor-pointer hover:scale-105 [content-visibility:auto] [contain-intrinsic-size:auto_220px]">
         <CardContent className="p-6">
           <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold text-lg text-slate-900 font-heading mb-2 line-clamp-2">
-                {caseData.victimName}
-              </h3>
-              <Badge className={`text-xs ${getStatusColor(caseData.status)}`}>{caseData.status}</Badge>
+            <div className="flex items-center gap-3.5">
+              <VictimPhoto name={caseData.victimName} url={photoUrl} variant="avatar" size={64} />
+              <div className="min-w-0">
+                <h3 className="font-semibold text-lg text-slate-900 font-heading mb-2 line-clamp-2">
+                  {caseData.victimName}
+                </h3>
+                <Badge className={`text-xs ${getStatusColor(caseData.status)}`}>{caseData.status}</Badge>
+              </div>
             </div>
 
             <div className="space-y-2 text-sm text-slate-600">
@@ -90,11 +72,12 @@ function CaseCard({ case: caseData }: CaseCardProps) {
 
 interface ScrollingRowProps {
   cases: CaseData[]
+  photoUrls: Record<string, string>
   direction: "left" | "right"
   speed: number
 }
 
-function ScrollingRow({ cases, direction, speed }: ScrollingRowProps) {
+function ScrollingRow({ cases, photoUrls, direction, speed }: ScrollingRowProps) {
   const [duplicatedCases, setDuplicatedCases] = useState<CaseData[]>([])
 
   useEffect(() => {
@@ -114,7 +97,11 @@ function ScrollingRow({ cases, direction, speed }: ScrollingRowProps) {
         }}
       >
         {duplicatedCases.map((caseData, index) => (
-          <CaseCard key={`${caseData.id}-${index}`} case={caseData} />
+          <CaseCard
+            key={`${caseData.id}-${index}`}
+            case={caseData}
+            photoUrl={caseData.photoPath ? photoUrls[caseData.photoPath] : null}
+          />
         ))}
       </div>
     </div>
@@ -130,6 +117,7 @@ const VITRINA_MAX_CASES = 24
 export function AnimatedCasesGrid() {
   const { data: allCases = [], isLoading, error, refetch } = useCasesList()
   const [rows, setRows] = useState<CaseData[][]>([])
+  const photoUrls = usePhotoUrls(allCases.slice(0, VITRINA_MAX_CASES).map((c) => c.photoPath))
 
   useEffect(() => {
     const cases = allCases.slice(0, VITRINA_MAX_CASES)
@@ -183,6 +171,7 @@ export function AnimatedCasesGrid() {
           <ScrollingRow
             key={index}
             cases={rowCases}
+            photoUrls={photoUrls}
             direction={index % 2 === 0 ? "left" : "right"}
             speed={30 + index * 5}
           />

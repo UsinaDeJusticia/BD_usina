@@ -9,6 +9,10 @@ import { isUnsafeExternalUrl, normalizeExternalUrl } from "@/lib/url"
 
 export function buildVictimRow(victim: any) {
   return {
+    // foto_path sólo se escribe si el formulario la conoce: undefined = no
+    // tocar (víctima nueva sin foto, o base sin la columna de scripts/017);
+    // null = se quitó la foto; string = foto nueva o la misma de antes.
+    ...(victim.fotoPath !== undefined ? { foto_path: victim.fotoPath } : {}),
     nombre_completo: victim.nombreCompleto || null,
     fecha_nacimiento: victim.fechaNacimiento || null,
     edad: victim.edad ? Number.parseInt(victim.edad) : null,

@@ -18,6 +18,8 @@ export interface CaseListItem {
   familyContactPhone: string
   hechoId: string
   totalVictimsInHecho: number
+  /** Ruta de la foto de perfil (bucket privado) o null. */
+  photoPath: string | null
 }
 
 const NOT_SPECIFIED = "No especificado"
@@ -39,19 +41,14 @@ interface SeguimientoMin {
  * query embebida. La transformación a `CaseListItem` se hace en JS (no en
  * SQL) para mantener compatible la lógica con los componentes existentes.
  */
-export async function fetchCasesList(
-  supabase: SupabaseClient,
-): Promise<CaseListItem[]> {
-  const { data: casos, error } = await supabase
-    .from("casos")
-    .select(`
+const listSelect = (victimCols: string) => `
       id,
       estado_general,
       estado,
       hecho_id,
       victima_id,
       created_at,
-      victimas (id, nombre_completo),
+      victimas (${victimCols}),
       hechos (
         id,
         fecha_hecho,
@@ -59,8 +56,23 @@ export async function fetchCasesList(
         provincia,
         seguimiento (lista_contactos_familiares, created_at)
       )
-    `)
+    `
+
+export async function fetchCasesList(
+  supabase: SupabaseClient,
+): Promise<CaseListItem[]> {
+  let { data: casos, error } = await supabase
+    .from("casos")
+    .select(listSelect("id, nombre_completo, foto_path"))
     .order("created_at", { ascending: false })
+
+  // Base sin la columna de scripts/017: el listado sigue funcionando sin fotos.
+  if (error && /foto_path/.test(error.message ?? "")) {
+    ;({ data: casos, error } = await supabase
+      .from("casos")
+      .select(listSelect("id, nombre_completo"))
+      .order("created_at", { ascending: false }))
+  }
 
   if (error) throw error
 
@@ -105,6 +117,7 @@ export async function fetchCasesList(
       familyContactPhone,
       hechoId: c.hecho_id,
       totalVictimsInHecho: c.hecho_id ? hechoVictimCounts[c.hecho_id] : 1,
+      photoPath: victima.foto_path ?? null,
     }
   })
 }

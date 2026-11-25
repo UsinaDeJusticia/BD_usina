@@ -1,37 +1,11 @@
 "use client"
 
-import Link from "next/link"
-import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Calendar, MapPin, User, Search, Loader2, Users } from "lucide-react"
-import { formatDateUTC } from "@/lib/utils"
+import { Search, Loader2 } from "lucide-react"
 import { type CaseListItem } from "@/lib/data/casos"
 import { useCasesList } from "@/lib/queries/casos"
+import { usePhotoUrls } from "@/lib/photos/use-photo-urls"
+import { CasePhotoCard } from "@/components/cases/case-photo-card"
 
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "En investigación":
-      return "bg-yellow-100 text-yellow-800 border-yellow-200"
-    case "Imputado identificado":
-      return "bg-blue-100 text-blue-800 border-blue-200"
-    case "Procesado":
-      return "bg-orange-100 text-orange-800 border-orange-200"
-    case "Juicio oral":
-      return "bg-purple-100 text-purple-800 border-purple-200"
-    case "Condenado":
-      return "bg-green-100 text-green-800 border-green-200"
-    case "Absuelto":
-      return "bg-gray-100 text-gray-800 border-gray-200"
-    case "Sobreseído":
-      return "bg-slate-100 text-slate-800 border-slate-200"
-    case "Archivo":
-      return "bg-red-100 text-red-800 border-red-200"
-    case "Prescripción":
-      return "bg-purple-100 text-purple-800 border-purple-200"
-    default:
-      return "bg-gray-100 text-gray-800 border-gray-200"
-  }
-}
 
 interface CasesGridProps {
   filters?: {
@@ -47,6 +21,8 @@ interface CasesGridProps {
 
 export function CasesGrid({ filters = {} }: CasesGridProps) {
   const { data: cases = [], isLoading, error, refetch } = useCasesList()
+  // Un solo request firma todas las fotos del listado.
+  const photoUrls = usePhotoUrls(cases.map((c) => c.photoPath))
 
   const displayLocation = (c: CaseListItem) =>
     c.municipio !== "No especificado" ? c.municipio : c.provincia
@@ -147,52 +123,9 @@ export function CasesGrid({ filters = {} }: CasesGridProps) {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {filteredCases.map((case_) => (
-          <Link key={case_.id} href={`/casos/${case_.id}`}>
-            <Card className="h-full hover:shadow-lg transition-shadow duration-200 border-slate-200 hover:border-slate-300 cursor-pointer">
-              <CardContent className="p-6">
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="font-semibold text-lg text-slate-900 font-heading mb-2 line-clamp-2">
-                      {case_.victimName}
-                    </h3>
-                    <Badge className={`text-xs ${getStatusColor(case_.status)}`}>{case_.status}</Badge>
-                  </div>
-
-                  <div className="space-y-2 text-sm text-slate-600">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-slate-400" />
-                      <span>{formatDateUTC(case_.incidentDate)}</span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-slate-400" />
-                      <span className="line-clamp-1">{displayLocation(case_)}</span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <User className="w-4 h-4 text-slate-400" />
-                      <span className="line-clamp-1">
-                        {case_.familyContactName}
-                        {case_.familyRelationship ? ` - ${case_.familyRelationship}` : ""}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="w-4 h-4 text-slate-400 text-center">📞</span>
-                      <span className="line-clamp-1 font-mono text-xs">{case_.familyContactPhone}</span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4 text-slate-400" />
-                      <span className="line-clamp-1">{case_.totalVictimsInHecho} víctimas</span>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
+          <CasePhotoCard key={case_.id} caseData={case_} photoUrl={case_.photoPath ? photoUrls[case_.photoPath] : null} />
         ))}
       </div>
     </div>
