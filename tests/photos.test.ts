@@ -68,3 +68,21 @@ describe("buildVictimRow y foto_path (no perder datos)", () => {
     expect(buildVictimRow({ fotoPath: "fotos-perfil/x.jpg" }).foto_path).toBe("fotos-perfil/x.jpg")
   })
 })
+
+describe("classifyPhotoSupport (Codex #40)", () => {
+  it("sin error → la columna existe", async () => {
+    const { classifyPhotoSupport } = await import("@/lib/photos/use-photo-support")
+    expect(classifyPhotoSupport(null)).toBe(true)
+  })
+  it("columna inexistente → false (017 sin aplicar)", async () => {
+    const { classifyPhotoSupport } = await import("@/lib/photos/use-photo-support")
+    expect(classifyPhotoSupport({ code: "42703", message: "column victimas.foto_path does not exist" })).toBe(false)
+    expect(classifyPhotoSupport({ code: "PGRST204", message: "Could not find the 'foto_path' column" })).toBe(false)
+  })
+  it("errores pasajeros se relanzan para reintentar (no ocultan el selector)", async () => {
+    const { classifyPhotoSupport } = await import("@/lib/photos/use-photo-support")
+    expect(() => classifyPhotoSupport({ code: "", message: "TypeError: Failed to fetch" })).toThrow()
+    expect(() => classifyPhotoSupport({ code: "PGRST002", message: "Could not query the database for the schema cache" })).toThrow()
+    expect(() => classifyPhotoSupport({ code: "503", message: "Service Unavailable" })).toThrow()
+  })
+})
