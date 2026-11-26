@@ -90,6 +90,7 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
   }, [mode, caseId])
 
   const loadExistingCaseData = async () => {
+    if (!caseId) return
     const supabase = createClient()
     setIsLoading(true)
 
@@ -152,7 +153,9 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
           .order("created_at", { ascending: true })
 
         if (allCasosForHecho && allCasosForHecho.length > 0) {
-          const orderedVictimIds = allCasosForHecho.map((c) => c.victima_id).filter(Boolean)
+          const orderedVictimIds = allCasosForHecho
+            .map((c) => c.victima_id)
+            .filter((id): id is string => !!id)
 
           // Fetch all victims data
           const { data: victimsData } = await supabase.from("victimas").select("*").in("id", orderedVictimIds)
@@ -276,7 +279,9 @@ export function CaseForm({ mode, caseId }: CaseFormProps) {
 
       // Load seguimiento. `.maybeSingle()` no rompe cuando el hecho aún no
       // tiene una fila de seguimiento (caso real para fichas viejas).
-      const { data: seguimientoData } = await supabase.from("seguimiento").select("*").eq("hecho_id", hechoId).maybeSingle()
+      const { data: seguimientoData } = hechoId
+        ? await supabase.from("seguimiento").select("*").eq("hecho_id", hechoId).maybeSingle()
+        : { data: null }
 
       // Antes había acá un setFormData parcial sólo de `followUp`; abajo
       // el setFormData completo lo cubre con los mismos campos. Quitado

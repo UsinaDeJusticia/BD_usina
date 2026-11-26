@@ -12,6 +12,7 @@ base desde el SQL Editor** (salvo emergencias, ver al final).
 |---|---|
 | `supabase/migrations/20261126000000_baseline_produccion.sql` | Foto del esquema de producción al 26/11/2026 (solo estructura, sin datos). Ya está marcada como aplicada en producción. |
 | `supabase/migrations/20261126000100_storage_archivos_casos.sql` | Bucket privado y políticas de Storage (el dump no incluye ese esquema). También marcada como aplicada. |
+| `supabase/migrations/20261126000200_permisos_como_produccion.sql` | Iguala los permisos de una base nueva a los de producción (Supabase abre todo a `anon` por defecto). En producción no cambia nada. |
 | `lib/types/supabase.ts` | Tipos TypeScript generados desde las migraciones. **No se edita a mano.** |
 | CI, job `migrations` | En cada PR levanta una base vacía, aplica todas las migraciones, corre el lint y verifica que los tipos estén al día. |
 | `.github/workflows/db-deploy.yml` | Al llegar a `main`, aplica las migraciones nuevas en producción **después de que alguien lo apruebe** en GitHub. |
