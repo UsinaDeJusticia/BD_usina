@@ -1,16 +1,16 @@
-// Prueba las migraciones 013 (RLS) y 015 (integridad) contra Postgres real.
-// Requiere TEST_DATABASE_URL; sin ella se saltea.
-import { readFileSync } from "node:fs"
+// Seguridad e integridad del esquema real (supabase/migrations) contra
+// Postgres: RLS con whitelist, permisos por rol, delete_caso con snapshot,
+// CHECK de URLs y bucket. Requiere TEST_DATABASE_URL; sin ella se saltea.
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Client } from "pg"
+import type { Client } from "pg"
+import { createMigratedDb } from "./helpers/migrated-db"
 
 const ADMIN_URL = process.env.TEST_DATABASE_URL
 const DB_NAME = `usina_sql_${process.pid}`
 const run = ADMIN_URL ? describe : describe.skip
-const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8")
 
-let admin: Client
 let db: Client
+let drop: () => Promise<void>
 
 const A = "a0000000-0000-0000-0000-00000000000a"
 const B = "b0000000-0000-0000-0000-00000000000b"
@@ -38,7 +38,7 @@ insert into recursos(hecho_id,victima_id,imputado_id,tipo,titulo,url) values
   ('${H1}','${A}',null,'Foto','rec A','https://x.org/a'),
   ('${H1}','${B}',null,'Foto','rec B','https://x.org/b'),
   ('${H1}',null,'11000000-0000-0000-0000-000000000001','Nota','rec imp H1',null),
-  ('${H2}','${C}',null,'Foto','rec C','javascript:alert(1)'),
+  ('${H2}','${C}',null,'Foto','rec C','https://x.org/c'),
   ('${H2}',null,null,'Nota','rec gral H2','/api/files/casos/x.pdf');
 `
 
@@ -64,42 +64,22 @@ async function as(role: "anon" | "authenticated", email: string | null, sql: str
   }
 }
 
-run("migraciones SQL 013 / 015", () => {
+run("esquema: seguridad e integridad", () => {
   beforeAll(async () => {
-    admin = new Client({ connectionString: ADMIN_URL })
-    await admin.connect()
-    await admin.query(`drop database if exists ${DB_NAME}`)
-    await admin.query(`create database ${DB_NAME}`)
-    const url = new URL(ADMIN_URL!)
-    url.pathname = `/${DB_NAME}`
-    db = new Client({ connectionString: url.toString() })
-    await db.connect()
-    await db.query(read("./fixtures/schema.sql"))
-    // Peor caso: allowed_users con política abierta (cualquiera se agrega).
-    await db.query(`create policy "abierta" on allowed_users for all using (true) with check (true)`)
+    ;({ db, drop } = await createMigratedDb(ADMIN_URL!, DB_NAME))
     await db.query(SEED)
   })
 
   afterAll(async () => {
-    await db?.end()
-    if (admin) {
-      await admin.query(`drop database if exists ${DB_NAME}`)
-      await admin.end()
-    }
+    await drop?.()
   })
 
-  it("ANTES de 013 la anon key lee víctimas (el agujero existe)", async () => {
-    const r = await as("anon", null, "select count(*)::int n from victimas")
-    expect(r.rows[0].n).toBe(3)
-  })
-
-  it("013 se aplica sin tocar datos y es re-ejecutable", async () => {
-    const before = await counts()
-    await db.query(read("../scripts/013_harden_rls.sql"))
-    await db.query(read("../scripts/013_harden_rls.sql"))
-    expect(await counts()).toEqual(before)
-    const backup = await db.query("select count(*)::int n, bool_and(qual = 'true') abiertas from admin_backup.policies_013 where tablename <> 'allowed_users'")
-    expect(backup.rows[0]).toEqual({ n: 8, abiertas: true })
+  it("la base nueva queda con los mismos permisos que producción", async () => {
+    const r = await db.query(`select
+      has_table_privilege('anon', 'public.victimas', 'select') anon_lee,
+      has_function_privilege('authenticated', 'public.crear_notificaciones(text,text,text,text,text,text)', 'execute') auth_crea,
+      has_table_privilege('authenticated', 'public.allowed_users', 'insert') auth_inserta_whitelist`)
+    expect(r.rows[0]).toEqual({ anon_lee: false, auth_crea: false, auth_inserta_whitelist: false })
   })
 
   it("anon: sin acceso a tablas, whitelist ni RPC del dashboard", async () => {
@@ -132,24 +112,7 @@ run("migraciones SQL 013 / 015", () => {
     await db.query("rollback")
   })
 
-  it("rollback de 013 restaura las políticas originales y 013 se puede re-aplicar", async () => {
-    const before = await counts()
-    await db.query(read("../scripts/013_harden_rls_rollback.sql"))
-    const pols = await db.query("select policyname from pg_policies where schemaname='public' and tablename='victimas'")
-    expect(pols.rows).toEqual([{ policyname: "Allow all operations on victimas" }])
-    expect((await as("anon", null, "select count(*)::int n from victimas")).rows[0].n).toBe(3)
-
-    await db.query(read("../scripts/013_harden_rls.sql"))
-    expect((await as("anon", null, "select 1 from victimas")).error).toMatch(/permission denied/)
-    expect(await counts()).toEqual(before)
-  })
-
-  describe("015", () => {
-    beforeAll(async () => {
-      await db.query(read("../scripts/015_data_integrity.sql"))
-      await db.query(read("../scripts/015_data_integrity.sql"))
-    })
-
+  describe("integridad", () => {
     it("sólo usuarios de la whitelist pueden usar delete_caso", async () => {
       expect((await as("anon", null, `select delete_caso('${CASO_C}')`)).error).toMatch(/permission denied/)
       expect((await as("authenticated", "random@gmail.com", `select delete_caso('${CASO_C}')`)).error).toMatch(/No autorizado/)

@@ -1,0 +1,49 @@
+name: Edge functions a producción
+
+# Publica las edge functions de supabase/functions cuando cambian en main.
+# Usa el mismo environment "db-production" (aprobación obligatoria) y el mismo
+# seguro DB_DEPLOY_ENABLED que las migraciones. La configuración de cada
+# función (p.ej. verify_jwt) sale de supabase/config.toml.
+# Los secretos de las funciones (VAPID, CRON_SECRET, etc.) NO se tocan: siguen
+# configurados en Supabase → Edge Functions → Secrets.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: functions-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: vars.DB_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: db-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: cvxlbhykhvefufikspsm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.122.1
+
+      - name: Publicar funciones
+        run: |
+          set -euo pipefail
+          for dir in supabase/functions/*/; do
+            name=$(basename "$dir")
+            [ -f "$dir/index.ts" ] || continue
+            echo "::group::$name"
+            supabase functions deploy "$name" --project-ref "$PROJECT_REF"
+            echo "::endgroup::"
+          done

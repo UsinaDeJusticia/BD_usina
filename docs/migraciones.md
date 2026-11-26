@@ -41,6 +41,33 @@ Al mergear, GitHub Actions corre **"Migraciones a producción"**:
    `db push --linked --dry-run` que todo lo pendiente en producción esté en ese plan; si
    aparece algo más, no aplica nada.
 
+## Tests
+
+Los tests de integración (`tests/sql-*.test.ts`, `tests/save-case.test.ts`)
+crean una base Postgres 17 nueva y le aplican **todas las migraciones reales**
+(`tests/helpers/migrated-db.ts`). Solo simulan lo que Supabase trae de fábrica
+(roles, `auth.email()`, el esquema `storage`) en
+`tests/fixtures/supabase-shim.sql`. Así, si el código usa una columna que la
+base real no tiene, los tests fallan.
+
+```bash
+docker run -d --name pgtest -e POSTGRES_PASSWORD=postgres -p 55432:5432 postgres:17
+TEST_DATABASE_URL=postgres://postgres:postgres@localhost:55432/postgres npm test
+```
+
+## Edge functions
+
+`supabase/functions/*` se publican con `.github/workflows/functions-deploy.yml`
+cuando cambian en `main`, con la misma aprobación del environment
+`db-production`. La configuración (`verify_jwt`) sale de `supabase/config.toml`.
+Los secretos de las funciones siguen en Supabase → Edge Functions → Secrets.
+
+## Lo que sigue siendo manual (a propósito)
+
+- **Cron** (`alerta-aniversarios`) y **Vault** (`cron_secret`): guardan
+  secretos propios del entorno. Ver `scripts/009` y `scripts/014`.
+- **Secretos de las edge functions** (VAPID, etc.).
+
 ## Reglas
 
 1. **Nunca editar una migración ya aplicada.** Para corregir algo, crear una nueva.
