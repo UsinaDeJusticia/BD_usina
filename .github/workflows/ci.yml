@@ -57,3 +57,30 @@ jobs:
 
       - name: Auditoría de dependencias (producción)
         run: npm audit --omit=dev --audit-level=high
+
+  # Verifica que las migraciones de supabase/migrations se apliquen desde cero
+  # sobre una base Supabase vacía, que no tengan errores de lint y que los tipos
+  # de lib/types/supabase.ts estén generados desde ese mismo esquema.
+  migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.122.1
+
+      - name: Levantar Postgres de Supabase y aplicar migraciones
+        run: supabase db start
+
+      - name: Lint del esquema
+        run: supabase db lint --local --level error --fail-on error
+
+      - name: Tipos al día con las migraciones
+        run: |
+          supabase gen types typescript --local > /tmp/supabase.ts
+          if ! diff -u lib/types/supabase.ts /tmp/supabase.ts; then
+            echo "::error::lib/types/supabase.ts no coincide con las migraciones. Corré 'npm run db:types' y commiteá el resultado."
+            exit 1
+          fi
