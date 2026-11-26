@@ -104,7 +104,7 @@ jobs:
       - name: Verificar que lo pendiente coincide con el plan aprobado
         run: |
           set -euo pipefail
-          out=$(supabase db push --dry-run 2>&1)
+          out=$(supabase db push --linked --dry-run 2>&1)
           echo "$out"
           pending=$( (echo "$out" | grep -oE '[0-9]{14}_[A-Za-z0-9_]+\.sql' || true) | sort -u | paste -sd, -)
           echo "Pendientes en producción: ${pending:-ninguna}"
@@ -121,4 +121,4 @@ jobs:
           fi
 
       - name: Aplicar migraciones
-        run: supabase db push
+        run: supabase db push --linked
