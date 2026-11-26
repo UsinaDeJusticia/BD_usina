@@ -32,9 +32,14 @@ npm run db:types            # regenera lib/types/supabase.ts
 Commitear la migración y `lib/types/supabase.ts` en el mismo PR. CI verifica que
 apliquen y que los tipos coincidan.
 
-Al mergear, GitHub Actions muestra el job **"Migraciones a producción"**
-esperando aprobación. Quien aprueba ve el listado de migraciones pendientes
-(`db push --dry-run`) antes de confirmar.
+Al mergear, GitHub Actions corre **"Migraciones a producción"**:
+
+1. **plan** lista en el resumen del run las migraciones nuevas del merge (y
+   frena si alguien editó o borró una migración existente).
+2. **apply** queda esperando aprobación (*Review deployments*). Revisá el
+   resumen del plan antes de aprobar. Antes de aplicar, verifica con
+   `db push --dry-run` que todo lo pendiente en producción esté en ese plan; si
+   aparece algo más, no aplica nada.
 
 ## Reglas
 

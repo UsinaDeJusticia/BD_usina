@@ -1,9 +1,14 @@
 name: Migraciones a producción
 
 # Aplica en producción las migraciones nuevas de supabase/migrations cuando
-# llegan a main. Siempre espera la aprobación manual del environment
-# "db-production" (GitHub → Settings → Environments → db-production → Required
-# reviewers). Ver docs/migraciones.md.
+# llegan a main. Ver docs/migraciones.md.
+#
+# 1. "plan" (sin acceso a producción) lista las migraciones nuevas del push en
+#    el resumen del run, ANTES de pedir la aprobación, y frena si alguien editó
+#    o borró una migración ya existente.
+# 2. "apply" espera la aprobación del environment "db-production" (Required
+#    reviewers). Antes de aplicar verifica que todo lo pendiente en producción
+#    esté en el plan que se mostró; si aparece algo más, no aplica nada.
 
 on:
   push:
@@ -21,11 +26,62 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  plan:
     # Seguro extra: hasta que la variable DB_DEPLOY_ENABLED sea "true" (se activa
-    # DESPUÉS de configurar los revisores obligatorios del environment) el job no
-    # corre. Así un environment sin protección nunca aplica cambios solo.
+    # DESPUÉS de configurar los revisores obligatorios del environment) no corre.
     if: vars.DB_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      expected: ${{ steps.plan.outputs.expected }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Migraciones nuevas en este push
+        id: plan
+        env:
+          BEFORE: ${{ github.event.before }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Migraciones a aplicar en producción"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$EVENT" != "push" ] || [ -z "${BEFORE:-}" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "expected=" >> "$GITHUB_OUTPUT"
+            echo "Ejecución manual: se aplicará lo que liste el dry-run del job **apply** (revisalo en sus logs; sin verificación contra un plan)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          changed=$(git diff --name-status "$BEFORE" "$GITHUB_SHA" -- supabase/migrations)
+          tocadas=$(echo "$changed" | awk '$1 != "A" && NF' || true)
+          if [ -n "$tocadas" ]; then
+            {
+              echo "**Se modificaron o borraron migraciones existentes. No se aplica nada.**"
+              echo '```'
+              echo "$tocadas"
+              echo '```'
+              echo "Nunca se edita una migración ya aplicada: creá una nueva."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          nuevas=$(echo "$changed" | awk '$1 == "A" && $2 ~ /\.sql$/ {n=split($2, p, "/"); print p[n]}' | sort)
+          if [ -z "$nuevas" ]; then
+            echo "Ninguna migración nueva." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "$nuevas" | sed 's/^/- `/; s/$/`/' >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+            echo "Las que ya estén registradas en producción se saltean." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "expected=$(echo "$nuevas" | paste -sd, -)" >> "$GITHUB_OUTPUT"
+
+  apply:
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: db-production
@@ -33,6 +89,8 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       PROJECT_REF: cvxlbhykhvefufikspsm
+      EXPECTED: ${{ needs.plan.outputs.expected }}
+      EVENT: ${{ github.event_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -43,8 +101,24 @@ jobs:
       - name: Vincular el proyecto
         run: supabase link --project-ref "$PROJECT_REF"
 
-      - name: Migraciones pendientes (sin aplicar)
-        run: supabase db push --dry-run
+      - name: Verificar que lo pendiente coincide con el plan aprobado
+        run: |
+          set -euo pipefail
+          out=$(supabase db push --dry-run 2>&1)
+          echo "$out"
+          pending=$( (echo "$out" | grep -oE '[0-9]{14}_[A-Za-z0-9_]+\.sql' || true) | sort -u | paste -sd, -)
+          echo "Pendientes en producción: ${pending:-ninguna}"
+          echo "Plan aprobado:            ${EXPECTED:-ninguna}"
+          if [ "$EVENT" = "push" ]; then
+            # Todo lo pendiente tiene que haber estado en el plan que se aprobó.
+            # (El plan puede listar de más: lo que ya está aplicado se saltea.)
+            fuera=$(comm -23 <(echo "$pending" | tr , '\n' | sed '/^$/d' | sort) \
+                             <(echo "$EXPECTED" | tr , '\n' | sed '/^$/d' | sort))
+            if [ -n "$fuera" ]; then
+              echo "::error::Hay migraciones pendientes que no estaban en el plan aprobado: $fuera. No se aplica nada."
+              exit 1
+            fi
+          fi
 
       - name: Aplicar migraciones
         run: supabase db push
