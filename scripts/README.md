@@ -32,10 +32,5 @@ Los pasos completos y el orden recomendado están en `docs/security-hardening.md
 
 ## Cómo se prueban
 
-`tests/fixtures/schema.sql` reconstruye el esquema (con roles y `auth.email()`
-como en Supabase) y `tests/sql-migrations.test.ts` aplica `013` y `015` sobre
-datos de ejemplo, verifica permisos por rol, que no se pierda ninguna fila, el
-rollback y la recuperación desde snapshots. Corre en CI en cada PR.
-
-Si en producción hay columnas o tablas que no están en el fixture, agregalas
-ahí para que los tests sigan representando la base real.
+Ya no se prueban estos scripts: los tests aplican las migraciones de
+`supabase/migrations` (ver `docs/migraciones.md`, sección Tests).

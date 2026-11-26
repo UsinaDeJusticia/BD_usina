@@ -13,6 +13,7 @@
 //   - Recursos a eliminar: primero las filas, después los archivos.
 
 import type { SupabaseClient } from "@supabase/supabase-js"
+import type { Database, TablesInsert } from "@/lib/types/supabase"
 import { isUnsafeExternalUrl } from "@/lib/url"
 import {
   buildImputadoFields,
@@ -28,7 +29,7 @@ import {
 } from "@/lib/cases/payloads"
 
 export interface SaveCaseInput {
-  supabase: SupabaseClient
+  supabase: SupabaseClient<Database>
   mode: "create" | "edit"
   caseId?: string
   formData: any
@@ -57,13 +58,13 @@ export async function saveCase({
 
   // Inserta y lanza si falla. Evita los inserts "fire and forget" que
   // perdían recursos en silencio.
-  const insertOrThrow = async (table: string, row: Record<string, unknown>) => {
-    const { error } = await supabase.from(table).insert([row])
+  const insertOrThrow = async <T extends "recursos" | "seguimiento">(table: T, row: TablesInsert<T>) => {
+    const { error } = await supabase.from(table).insert([row] as any)
     if (error) throw error
   }
 
   const createdCasoIds: string[] = []
-  const insertCaso = async (row: Record<string, unknown>) => {
+  const insertCaso = async (row: TablesInsert<"casos">) => {
     const { data, error } = await supabase.from("casos").insert([row]).select("id").single()
     if (error) throw error
     if (data?.id) createdCasoIds.push(data.id)
@@ -71,14 +72,16 @@ export async function saveCase({
 
   // Reemplaza las fechas de juicio de un imputado sin perder las
   // existentes si el insert falla (antes: delete + insert sin chequeo).
-  const replaceTrialDates = async (accusedId: string, hechoId: string | null, dates: any[]) => {
+  // fechas_juicio se vincula sólo por imputado_id: en producción no existe
+  // hecho_id (mandarlo hacía fallar todo insert; por eso no había fechas).
+  const replaceTrialDates = async (accusedId: string, dates: any[]) => {
     const { data: previous } = await supabase
       .from("fechas_juicio")
       .select("fecha_audiencia, descripcion")
       .eq("imputado_id", accusedId)
     const newRows = (dates || [])
       .filter(Boolean)
-      .map((date: string) => ({ imputado_id: accusedId, fecha_audiencia: date, hecho_id: hechoId }))
+      .map((date: string) => ({ imputado_id: accusedId, fecha_audiencia: date }))
 
     const { error: delError } = await supabase.from("fechas_juicio").delete().eq("imputado_id", accusedId)
     if (delError) throw delError
@@ -89,7 +92,7 @@ export async function saveCase({
       // Restaurar las fechas previas para no perder datos.
       if (previous && previous.length > 0) {
         await supabase.from("fechas_juicio").insert(
-          previous.map((p: any) => ({ ...p, imputado_id: accusedId, hecho_id: hechoId })),
+          previous.map((p: any) => ({ ...p, imputado_id: accusedId })),
         )
       }
       throw insError
@@ -216,7 +219,7 @@ export async function saveCase({
         const imputadosToDelete = existingImputadoIds.filter((id) => !formImputadoIds.includes(id))
         for (const idToDelete of imputadosToDelete) {
           // Primero los registros relacionados, después el imputado.
-          for (const table of ["recursos", "instancias_judiciales", "fechas_juicio"]) {
+          for (const table of ["recursos", "instancias_judiciales", "fechas_juicio"] as const) {
             const { error } = await supabase.from(table).delete().eq("imputado_id", idToDelete)
             if (error) throw error
           }
@@ -274,7 +277,7 @@ export async function saveCase({
           }
 
           await saveResources(accused.resources, { hechoId, imputadoId: accusedId })
-          await replaceTrialDates(accusedId, hechoId, accused.trialDates)
+          await replaceTrialDates(accusedId, accused.trialDates)
         }
       }
 
@@ -356,7 +359,7 @@ export async function saveCase({
         if (accusedError) throw accusedError
         const accusedId = accusedData.id
 
-        await replaceTrialDates(accusedId, hechoId, accused.trialDates)
+        await replaceTrialDates(accusedId, accused.trialDates)
         for (const instancia of accused.instanciasJudiciales || []) {
           await saveInstancia({ ...instancia, id: null }, accusedId)
         }

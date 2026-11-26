@@ -1,3 +1,4 @@
+import type { TablesInsert } from "@/lib/types/supabase"
 // Construcción de filas (snake_case) a partir del estado del formulario de
 // casos (camelCase). Antes estos objetos estaban copiados 2-4 veces dentro de
 // `components/cases/case-form.tsx` y habían divergido (p.ej. el `tipo` de los
@@ -141,7 +142,7 @@ export function buildResourceInsert(
   resource: any,
   owner: { hechoId: string | null; victimaId?: string | null; imputadoId?: string | null },
 ) {
-  const row: Record<string, unknown> = {
+  const row: TablesInsert<"recursos"> = {
     hecho_id: owner.hechoId,
     ...buildResourceUpdate(resource),
     archivo_path: resource.archivo_path || null,

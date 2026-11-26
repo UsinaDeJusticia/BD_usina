@@ -1,16 +1,16 @@
-// Prueba scripts/016_notifications.sql contra Postgres real.
+// Notificaciones (tablas, RPCs y trigger hacia send-push) sobre el esquema
+// real de supabase/migrations, contra Postgres.
 // Requiere TEST_DATABASE_URL; sin ella se saltea.
-import { readFileSync } from "node:fs"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
-import { Client } from "pg"
+import type { Client } from "pg"
+import { createMigratedDb } from "./helpers/migrated-db"
 
 const ADMIN_URL = process.env.TEST_DATABASE_URL
 const DB_NAME = `usina_notif_${process.pid}`
 const run = ADMIN_URL ? describe : describe.skip
-const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8")
 
-let admin: Client
 let db: Client
+let drop: () => Promise<void>
 
 const CASO = "ca000000-0000-0000-0000-00000000000a"
 const ANA = "ana@usina.org"
@@ -52,33 +52,17 @@ async function as(role: "anon" | "authenticated" | "service_role", email: string
 
 const count = async (sql: string) => Number((await db.query(sql)).rows[0].n)
 
-run("016 notificaciones", () => {
+run("notificaciones", () => {
   beforeAll(async () => {
-    admin = new Client({ connectionString: ADMIN_URL })
-    await admin.connect()
-    await admin.query(`drop database if exists ${DB_NAME}`)
-    await admin.query(`create database ${DB_NAME}`)
-    const url = new URL(ADMIN_URL!)
-    url.pathname = `/${DB_NAME}`
-    db = new Client({ connectionString: url.toString() })
-    await db.connect()
-    await db.query(read("./fixtures/schema.sql"))
+    ;({ db, drop } = await createMigratedDb(ADMIN_URL!, DB_NAME))
+    await db.query(STUBS)
     await db.query(`insert into allowed_users(email) values ('${ANA}'), ('${BETO}'), ('${CARLA}')`)
     await db.query(`insert into victimas(id, nombre_completo) values ('a0000000-0000-0000-0000-00000000000a', 'Víctima Uno')`)
     await db.query(`insert into casos(id, victima_id) values ('${CASO}', 'a0000000-0000-0000-0000-00000000000a')`)
-    await db.query(read("../scripts/013_harden_rls.sql"))
-    await db.query(read("../scripts/015_data_integrity.sql"))
-    await db.query(STUBS)
-    await db.query(read("../scripts/016_notifications.sql"))
-    await db.query(read("../scripts/016_notifications.sql")) // re-ejecutable
   })
 
   afterAll(async () => {
-    await db?.end()
-    if (admin) {
-      await admin.query(`drop database if exists ${DB_NAME}`)
-      await admin.end()
-    }
+    await drop?.()
   })
 
   beforeEach(async () => {

@@ -1,18 +1,18 @@
 // Tests de integración de saveCase contra Postgres real.
 // Requieren TEST_DATABASE_URL (p.ej. postgres://postgres@localhost:5432/postgres).
 // Sin esa variable se saltean (CI los corre con un servicio Postgres).
-import { readFileSync } from "node:fs"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
-import { Client } from "pg"
+import type { Client } from "pg"
 import { saveCase } from "@/lib/cases/save-case"
 import { createPgSupabase } from "./helpers/pg-supabase"
+import { createMigratedDb } from "./helpers/migrated-db"
 
 const ADMIN_URL = process.env.TEST_DATABASE_URL
 const DB_NAME = `usina_test_${process.pid}`
 const run = ADMIN_URL ? describe : describe.skip
 
-let admin: Client
 let db: Client
+let drop: () => Promise<void>
 let fake: ReturnType<typeof createPgSupabase>
 
 const count = async (table: string) => Number((await db.query(`select count(*) from public.${table}`)).rows[0].count)
@@ -80,27 +80,12 @@ const create = (formData: any) =>
 
 run("saveCase (Postgres real)", () => {
   beforeAll(async () => {
-    admin = new Client({ connectionString: ADMIN_URL })
-    await admin.connect()
-    await admin.query(`drop database if exists ${DB_NAME}`)
-    await admin.query(`create database ${DB_NAME}`)
-    const url = new URL(ADMIN_URL!)
-    url.pathname = `/${DB_NAME}`
-    db = new Client({ connectionString: url.toString() })
-    await db.connect()
-    await db.query(readFileSync(new URL("./fixtures/schema.sql", import.meta.url), "utf8"))
-    // Foto de perfil (scripts/017), dos veces: tiene que ser re-ejecutable.
-    const sql017 = readFileSync(new URL("../scripts/017_victim_photo.sql", import.meta.url), "utf8")
-    await db.query(sql017)
-    await db.query(sql017)
+    // Esquema real: todas las migraciones de supabase/migrations.
+    ;({ db, drop } = await createMigratedDb(ADMIN_URL!, DB_NAME))
   })
 
   afterAll(async () => {
-    await db?.end()
-    if (admin) {
-      await admin.query(`drop database if exists ${DB_NAME}`)
-      await admin.end()
-    }
+    await drop?.()
   })
 
   beforeEach(async () => {
