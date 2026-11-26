@@ -38,7 +38,7 @@ Al mergear, GitHub Actions corre **"Migraciones a producción"**:
    frena si alguien editó o borró una migración existente).
 2. **apply** queda esperando aprobación (*Review deployments*). Revisá el
    resumen del plan antes de aprobar. Antes de aplicar, verifica con
-   `db push --dry-run` que todo lo pendiente en producción esté en ese plan; si
+   `db push --linked --dry-run` que todo lo pendiente en producción esté en ese plan; si
    aparece algo más, no aplica nada.
 
 ## Reglas
