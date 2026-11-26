@@ -25,7 +25,7 @@ Los scripts se ejecutaban **a mano** en el SQL Editor de Supabase, en orden.
 | `013_harden_rls_rollback.sql` | Vuelve atrás `013` (sólo emergencias) | — |
 | `014_cron_secret.sql` | Secreto compartido cron → edge function | Aplicado (2026-11-22); confirmar la corrida del 23/11 15:00 UTC |
 | `015_data_integrity.sql` | `delete_caso()` con snapshot, CHECK de URLs, límites del bucket | Aplicado (2026-11-22) |
-| `016_notifications.sql` | Notificaciones en la app + Web Push (tablas, RPCs, trigger hacia `send-push`) | **Pendiente** (ver `docs/opencode-prompt-3.md`) |
+| `016_notifications.sql` | Notificaciones en la app + Web Push (tablas, RPCs, trigger hacia `send-push`) | Aplicado (está en el esquema base del 26/11/2026) |
 | `017_victim_photo.sql` | Columna `victimas.foto_path` (foto de perfil). Aditiva: se puede aplicar antes o después del deploy | Aplicado (2026-11-25) |
 
 Los pasos completos y el orden recomendado están en `docs/security-hardening.md`.
